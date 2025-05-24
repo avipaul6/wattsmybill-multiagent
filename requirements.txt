@@ -1,0 +1,38 @@
+# Core google cloud packages
+google-cloud-aiplatform==1.94.0
+google-cloud-bigquery==3.33.0
+google-cloud-core==2.4.3
+google-cloud-documentai==3.5.0
+google-cloud-resource-manager==1.14.2
+google-cloud-secret-manager==2.23.3
+google-cloud-speech==2.32.0
+google-cloud-storage==2.19.0
+google-cloud-trace==1.16.1
+google-crc32c==1.7.1
+google-genai==1.16.1
+
+# Agent Development Kit
+google-adk==1.0.0
+
+# Data processing
+pandas==2.2.3
+numpy==1.26.0
+pydantic==2.11.5
+pydantic_core==2.33.2
+
+# API integrations
+requests==2.31.0
+requests-file==1.5.1
+python-dotenv==1.0.0
+
+# PDF processing (fallback)
+PyPDF2==3.0.1
+pdf2image==1.17.0
+pytesseract==0.3.13
+
+# Utilities
+python-dateutil==2.9.0.post0
+plotly==6.1.1
+
+# front end 
+streamlit==1.45.1
