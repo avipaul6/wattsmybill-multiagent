@@ -25,7 +25,7 @@ WattsMyBill uses 6 specialized AI agents working together to answer the question
 ## 🚀 Quick Start
 ```bash
 # Clone the repository
-git clone https://github.com/yourusername/wattsmybill-multiagent.git
+git clone https://github.com/avipaul6/wattsmybill-multiagent.git
 cd wattsmybill-multiagent
 
 # Install dependencies
@@ -34,6 +34,7 @@ pip install -r requirements.txt
 # Set up environment variables
 cp .env.example .env
 # Edit .env with your Google Cloud credentials
+# Change the API creds including LLM keys 
 
 # Run locally
 streamlit run app.py
