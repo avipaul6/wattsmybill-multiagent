@@ -193,7 +193,7 @@ class AustralianBillParser:
         except Exception as e:
             self.logger.error(f"Full PDF text extraction failed: {e}")
             return ""
-    
+
     def _extract_pdf_text(self, pdf_content: bytes) -> str:
         """Extract text from PDF using PyPDF2"""
         try:
@@ -310,7 +310,8 @@ class AustralianBillParser:
         # Strategy 1: Specific patterns based on diagnostic results
 
         # Origin format - look for the exact pattern we saw
-        origin_match = re.search(r'general usage[\s\n]*(\d+(?:,\d{3})*\.?\d*)\s*kwh', text, re.IGNORECASE)
+        origin_match = re.search(
+            r'general usage[\s\n]*(\d+(?:,\d{3})*\.?\d*)\s*kwh', text, re.IGNORECASE)
         if origin_match:
             try:
                 usage = float(origin_match.group(1).replace(',', ''))
@@ -324,7 +325,8 @@ class AustralianBillParser:
         peak_total = 0
 
         # Look for peak usage
-        peak_match = re.search(r'peak usage[^0-9]*(\d+)\s*kwh', text, re.IGNORECASE)
+        peak_match = re.search(
+            r'peak usage[^0-9]*(\d+)\s*kwh', text, re.IGNORECASE)
         if peak_match:
             try:
                 peak_usage = int(peak_match.group(1))
@@ -335,7 +337,8 @@ class AustralianBillParser:
                 pass
 
         # Look for off-peak usage
-        offpeak_match = re.search(r'off[\s\-]*peak usage[^0-9]*(\d+)\s*kwh', text, re.IGNORECASE)
+        offpeak_match = re.search(
+            r'off[\s\-]*peak usage[^0-9]*(\d+)\s*kwh', text, re.IGNORECASE)
         if offpeak_match:
             try:
                 offpeak_usage = int(offpeak_match.group(1))
@@ -346,7 +349,8 @@ class AustralianBillParser:
                 pass
 
         if peak_total > 0:
-            print(f"DEBUG: Total AGL usage (peak + off-peak): {peak_total} kWh")
+            print(
+                f"DEBUG: Total AGL usage (peak + off-peak): {peak_total} kWh")
             return peak_total
 
         # Alinta format - try multiple approaches
@@ -463,44 +467,134 @@ class AustralianBillParser:
         return None
 
     def _extract_solar_export(self, text: str) -> Optional[float]:
-        """Extract solar export amount in kWh"""
-        for pattern in self.patterns['solar_export_kwh']:
-            match = re.search(pattern, text, re.IGNORECASE)
-            if match:
+        """FIXED: Extract solar export amount in kWh with better patterns"""
+
+        # Enhanced patterns based on your diagnostic data
+        solar_export_patterns = [
+            # Origin format: "solar feed-in credit (incl gst): 1,250 kwh"
+            r'solar feed[\-\s]*in credit[\s\(]*(?:incl[\s\w,]*)?[\s\)]*[\s:]*(\d+(?:,\d{3})*\.?\d*)\s*kwh',
+
+            # Standard patterns
+            r'solar exports?[\s:]*(\d+(?:,\d{3})*\.?\d*)\s*kwh',
+            r'feed[\-\s]*in[\s:]*(\d+(?:,\d{3})*\.?\d*)\s*kwh',
+            r'exported?[\s:]*(\d+(?:,\d{3})*\.?\d*)\s*kwh',
+            r'exported electricity[\s:]*(\d+(?:,\d{3})*\.?\d*)\s*kwh',
+            r'pv exports?[\s:]*(\d+(?:,\d{3})*\.?\d*)\s*kwh',
+            r'solar generation exported[\s:]*(\d+(?:,\d{3})*\.?\d*)\s*kwh',
+
+            # More flexible patterns
+            r'solar[\s\w]*credit[\s\S]*?(\d+(?:,\d{3})*\.?\d*)\s*kwh',
+            r'feed[\s\-]*in[\s\S]*?(\d+(?:,\d{3})*\.?\d*)\s*kwh',
+        ]
+
+        print(f"🐛 DEBUG: Searching for solar export in text...")
+
+        for i, pattern in enumerate(solar_export_patterns):
+            matches = re.finditer(pattern, text, re.IGNORECASE)
+            for match in matches:
                 try:
                     export = float(match.group(1).replace(',', ''))
-                    if 0 <= export <= 10000:
+                    if 0 <= export <= 10000:  # Reasonable solar export range
+                        print(
+                            f"🐛 Found solar export with pattern {i+1}: {export} kWh")
+                        print(f"   Pattern: {pattern}")
+                        print(f"   Match: '{match.group(0)}'")
                         return export
                 except ValueError:
                     continue
+
+        print(f"🐛 No solar export found")
         return None
 
     def _extract_solar_credit(self, text: str) -> Optional[float]:
-        """Extract solar feed-in credit amount"""
-        for pattern in self.patterns['solar_credit_amount']:
-            match = re.search(pattern, text, re.IGNORECASE)
-            if match:
+        """FIXED: Extract solar feed-in credit amount with better patterns"""
+
+        # Enhanced patterns for solar credits
+        solar_credit_patterns = [
+            # Origin format: "solar feed-in credit (incl gst): 1,250 kwh $-125.50"
+            r'solar feed[\-\s]*in credit[\s\(]*(?:incl[\s\w,]*)?[\s\)]*[\s:]*\d+(?:,\d{3})*\.?\d*\s*kwh[\s:$\-]*(\d+(?:,\d{3})*\.?\d*)',
+
+            # Standard patterns
+            r'solar exports?[\s:]*\d+(?:,\d{3})*\.?\d*\s*kwh[\s:$\-]*(\d+(?:,\d{3})*\.?\d*)',
+            r'feed[\-\s]*in[\s:]*\$[\-]?(\d+(?:,\d{3})*\.?\d*)',
+            r'solar credit[\s:$\-]*(\d+(?:,\d{3})*\.?\d*)',
+            r'exported electricity credit[\s:$\-]*(\d+(?:,\d{3})*\.?\d*)',
+            r'pv export credit[\s:$\-]*(\d+(?:,\d{3})*\.?\d*)',
+            r'feed in credit[\s:$\-]*(\d+(?:,\d{3})*\.?\d*)',
+
+            # More flexible - look for credit amounts near solar keywords
+            r'solar[\s\w]*credit[\s\S]*?\$[\-]?(\d+(?:,\d{3})*\.?\d*)',
+            r'feed[\s\-]*in[\s\S]*?\$[\-]?(\d+(?:,\d{3})*\.?\d*)',
+
+            # Look for negative amounts (credits)
+            r'\$\-(\d+(?:,\d{3})*\.?\d*)[\s\S]*?(?:solar|feed|credit)',
+            r'(?:solar|feed|credit)[\s\S]*?\$\-(\d+(?:,\d{3})*\.?\d*)',
+        ]
+
+        print(f"🐛 DEBUG: Searching for solar credit...")
+
+        for i, pattern in enumerate(solar_credit_patterns):
+            matches = re.finditer(pattern, text, re.IGNORECASE)
+            for match in matches:
                 try:
                     credit = float(match.group(1).replace(',', ''))
-                    if 0 <= credit <= 1000:
+                    if 0 <= credit <= 1000:  # Reasonable credit range
+                        print(
+                            f"🐛 Found solar credit with pattern {i+1}: ${credit}")
+                        print(f"   Pattern: {pattern}")
+                        print(f"   Match: '{match.group(0)}'")
                         return credit
                 except ValueError:
                     continue
+
+        print(f"🐛 No solar credit found")
         return None
 
     def _extract_feed_in_tariff(self, text: str) -> Optional[float]:
-        """Extract feed-in tariff rate"""
-        for pattern in self.patterns['feed_in_tariff']:
-            match = re.search(pattern, text, re.IGNORECASE)
-            if match:
+        """FIXED: Extract feed-in tariff rate with better patterns"""
+
+        # Enhanced patterns for feed-in tariffs
+        feed_in_patterns = [
+            # Origin format: "feed-in tariff: $0.10/kwh"
+            r'feed[\-\s]*in tariff[\s:$]*(\d+\.?\d*)',
+            r'feed[\-\s]*in tariff[\s:$]*(\d+\.?\d*)/kwh',
+
+            # Standard patterns
+            r'solar tariff[\s:$]*(\d+\.?\d*)',
+            r'export rate[\s:$]*(\d+\.?\d*)',
+            r'export tariff[\s:$]*(\d+\.?\d*)',
+            r'solar feed[\-\s]*in rate[\s:]*(\d+\.?\d*)c',
+            r'pv export rate[\s:$]*(\d+\.?\d*)',
+            r'solar buyback rate[\s:]*(\d+\.?\d*)c/kwh',
+
+            # Pattern for cents notation
+            r'(\d+\.?\d*)c?/kwh[\s]*(?:feed|solar|export)',
+
+            # More flexible patterns
+            r'feed[\s\-]*in[\s\S]*?\$(\d+\.?\d*)',
+            r'solar[\s\w]*tariff[\s\S]*?\$(\d+\.?\d*)',
+        ]
+
+        print(f"🐛 DEBUG: Searching for feed-in tariff...")
+
+        for i, pattern in enumerate(feed_in_patterns):
+            matches = re.finditer(pattern, text, re.IGNORECASE)
+            for match in matches:
                 try:
                     tariff = float(match.group(1))
-                    if tariff > 1:
+                    # Convert cents to dollars if necessary
+                    if tariff > 1:  # Likely in cents
                         tariff = tariff / 100
-                    if 0.01 <= tariff <= 1.0:
+                    if 0.01 <= tariff <= 1.0:  # Reasonable tariff range
+                        print(
+                            f"🐛 Found feed-in tariff with pattern {i+1}: ${tariff:.3f}/kWh")
+                        print(f"   Pattern: {pattern}")
+                        print(f"   Match: '{match.group(0)}'")
                         return tariff
                 except ValueError:
                     continue
+
+        print(f"🐛 No feed-in tariff found")
         return None
 
     def _has_solar_system(self, data: Dict[str, Any]) -> bool:
@@ -544,7 +638,8 @@ class AustralianBillParser:
             match = re.search(pattern, text, re.IGNORECASE)
             if match:
                 try:
-                    amount = float(match.group(2) if len(match.groups()) > 1 else match.group(1))
+                    amount = float(match.group(2) if len(
+                        match.groups()) > 1 else match.group(1))
                     if 0 <= amount <= 1000:
                         return amount
                 except (ValueError, IndexError):
@@ -577,7 +672,8 @@ class AustralianBillParser:
         if data.get('account_number'):
             account = data['account_number']
             if len(account) > 4:
-                data['account_number'] = '*' * (len(account) - 4) + account[-4:]
+                data['account_number'] = '*' * \
+                    (len(account) - 4) + account[-4:]
 
         data['postcode'] = None
         return data
@@ -587,22 +683,26 @@ class AustralianBillParser:
         derived = {}
 
         if data.get('usage_kwh') and data.get('billing_days'):
-            derived['daily_average_kwh'] = data['usage_kwh'] / data['billing_days']
+            derived['daily_average_kwh'] = data['usage_kwh'] / \
+                data['billing_days']
 
         if data.get('total_amount') and data.get('usage_kwh'):
             derived['cost_per_kwh'] = data['total_amount'] / data['usage_kwh']
 
         if data.get('supply_charge') and data.get('billing_days'):
-            derived['daily_supply_charge'] = data['supply_charge'] / data['billing_days']
+            derived['daily_supply_charge'] = data['supply_charge'] / \
+                data['billing_days']
 
         if data.get('usage_charge') and data.get('usage_kwh'):
             derived['usage_rate'] = data['usage_charge'] / data['usage_kwh']
 
         if data.get('solar_export_kwh') and data.get('billing_days'):
-            derived['daily_solar_export'] = data['solar_export_kwh'] / data['billing_days']
+            derived['daily_solar_export'] = data['solar_export_kwh'] / \
+                data['billing_days']
 
         if data.get('solar_credit_amount'):
-            derived['solar_savings_annual'] = data['solar_credit_amount'] * (365 / (data.get('billing_days') or 90))
+            derived['solar_savings_annual'] = data['solar_credit_amount'] * \
+                (365 / (data.get('billing_days') or 90))
 
         return derived
 
@@ -648,12 +748,15 @@ class AustralianBillParser:
     def _calculate_confidence(self, data: Dict[str, Any]) -> float:
         """Calculate confidence score based on extracted data"""
         required_fields = ['retailer', 'total_amount', 'usage_kwh']
-        found_fields = sum(1 for field in required_fields if data.get(field) is not None)
+        found_fields = sum(
+            1 for field in required_fields if data.get(field) is not None)
 
         base_confidence = found_fields / len(required_fields)
 
-        optional_fields = ['account_number', 'state', 'billing_period', 'billing_days']
-        found_optional = sum(1 for field in optional_fields if data.get(field) is not None)
+        optional_fields = ['account_number', 'state',
+                           'billing_period', 'billing_days']
+        found_optional = sum(
+            1 for field in optional_fields if data.get(field) is not None)
 
         bonus = found_optional * 0.1
 
