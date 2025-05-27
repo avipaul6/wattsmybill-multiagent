@@ -10,15 +10,9 @@ import uuid
 import time
 from pathlib import Path
 from typing import Dict, Any, Optional
-
-# Add src to path for imports
-sys.path.insert(0, str(Path(__file__).parent / "src"))
-
-# Add at the top of app.py
-import os
 from datetime import datetime
 
-# Health check endpoint
+# CRITICAL: Health check MUST be the very first thing before any other Streamlit commands
 def health_check():
     try:
         # Your health check logic here
@@ -35,12 +29,23 @@ def health_check():
             "timestamp": datetime.now().isoformat()
         }
 
-# Add health endpoint handling
-query_params = st.experimental_get_query_params()
+# Check for health endpoint BEFORE any other Streamlit commands
+query_params = st.query_params  # Fixed: Use new API instead of experimental
 if 'health' in query_params:
     health_result = health_check()
     st.json(health_result)
     st.stop()
+
+# NOW we can safely set page config as the first "real" Streamlit command
+st.set_page_config(
+    page_title="WattsMyBill - Google Cloud ADK with Real Agent Integration",
+    page_icon="⚡",
+    layout="wide",
+    initial_sidebar_state="expanded"
+)
+
+# Add src to path for imports
+sys.path.insert(0, str(Path(__file__).parent / "src"))
 
 # Import the ADK-integrated factory that uses your real agents
 try:
@@ -50,14 +55,6 @@ try:
 except ImportError as e:
     st.error(f"Could not import ADK factory: {e}")
     ADK_FACTORY_AVAILABLE = False
-
-# Configure Streamlit page
-st.set_page_config(
-    page_title="WattsMyBill - Google Cloud ADK with Real Agent Integration",
-    page_icon="⚡",
-    layout="wide",
-    initial_sidebar_state="expanded"
-)
 
 # Initialize session state
 if 'user_id' not in st.session_state:

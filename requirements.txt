@@ -1,4 +1,7 @@
-# Core google cloud packages
+# Production-ready requirements.txt
+# Uses compatible version ranges for better Docker build reliability
+
+# Core Google Cloud packages - Keep these pinned for stability
 google-cloud-aiplatform==1.94.0
 google-cloud-bigquery==3.33.0
 google-cloud-core==2.4.3
@@ -11,28 +14,34 @@ google-cloud-trace==1.16.1
 google-crc32c==1.7.1
 google-genai==1.16.1
 
-# Agent Development Kit
-google-adk==1.0.0
+# Agent Development Kit - May need to be flexible if not in all repos
+google-adk>=1.0.0,<2.0.0
 
-# Data processing
-pandas==2.2.3
-numpy==1.26.0
-pydantic==2.11.5
-pydantic_core==2.33.2
+# Data processing - Use compatible version ranges
+pandas>=2.2.0,<2.3.0
+numpy>=1.24.0,<2.0.0  # Broader range to ensure availability
+pydantic>=2.11.0,<3.0.0
+pydantic_core>=2.33.0,<3.0.0
 
 # API integrations
-requests==2.31.0
-requests-file==1.5.1
-python-dotenv==1.0.0
+requests>=2.31.0,<3.0.0
+requests-file>=1.5.0,<2.0.0
+python-dotenv>=1.0.0,<2.0.0
 
-# PDF processing (fallback)
-PyPDF2==3.0.1
-pdf2image==1.17.0
-pytesseract==0.3.13
+# PDF processing - Use available versions
+PyPDF2>=3.0.0,<4.0.0
+pdf2image>=1.17.0,<2.0.0
+pytesseract>=0.3.10,<1.0.0
+Pillow>=10.0.0,<11.0.0
 
 # Utilities
-python-dateutil==2.9.0.post0
-plotly==6.1.1
+python-dateutil>=2.9.0,<3.0.0
+plotly>=5.17.0,<6.0.0
 
-# front end 
-streamlit==1.45.1
+# Frontend
+streamlit>=1.45.0,<2.0.0
+
+# System dependencies for better compatibility
+typing-extensions>=4.8.0
+setuptools>=68.0.0  # Ensure modern setuptools
+wheel>=0.41.0  # For building packages

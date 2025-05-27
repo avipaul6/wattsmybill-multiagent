@@ -8,7 +8,6 @@ on:
     branches: [ main, develop ]
 
 env:
-  PROJECT_ID: ${{ secrets.GCP_PROJECT_ID }}
   GAR_LOCATION: australia-southeast1
   REPOSITORY: wattsmybill
   SERVICE: wattsmybill-app
@@ -83,7 +82,7 @@ jobs:
       continue-on-error: true
 
     - name: Upload test results
-      uses: actions/upload-artifact@v3
+      uses: actions/upload-artifact@v4
       if: always()
       with:
         name: test-results-${{ github.sha }}
@@ -98,62 +97,84 @@ jobs:
     needs: test
     runs-on: ubuntu-latest
     if: github.ref == 'refs/heads/develop' && github.event_name == 'push'
-    
+
     environment: development
     
+    env:
+      PROJECT_ID: ${{ secrets.GCP_PROJECT_ID_DEV }}  # Environment-specific project ID
+
     steps:
-    - name: Checkout code
-      uses: actions/checkout@v4
+      - name: Checkout code
+        uses: actions/checkout@v4
 
-    - id: 'auth'
-      name: 'Authenticate to Google Cloud'
-      uses: 'google-github-actions/auth@v1'
-      with:
-        credentials_json: '${{ secrets.GCP_SA_KEY_DEV }}'
+      - id: "auth"
+        name: "Authenticate to Google Cloud"
+        uses: "google-github-actions/auth@v1"
+        with:
+          credentials_json: "${{ secrets.GCP_SA_KEY_DEV }}"
 
-    - name: 'Set up Cloud SDK'
-      uses: 'google-github-actions/setup-gcloud@v1'
+      - name: "Set up Cloud SDK"
+        uses: "google-github-actions/setup-gcloud@v1"
 
-    - name: 'Configure Docker to use gcloud as credential helper'
-      run: |
-        gcloud auth configure-docker $GAR_LOCATION-docker.pkg.dev
+      - name: "Debug Environment Variables"
+        run: |
+          echo "🔍 Environment Variable Debug"
+          echo "============================"
+          echo "PROJECT_ID: $PROJECT_ID"
+          echo "GAR_LOCATION: $GAR_LOCATION"
+          echo "REPOSITORY: $REPOSITORY"
+          echo "SERVICE: $SERVICE"
+          echo ""
+          echo "Expected image URL:"
+          echo "$GAR_LOCATION-docker.pkg.dev/$PROJECT_ID/$REPOSITORY/$SERVICE-dev:$GITHUB_SHA"
 
-    - name: 'Build Docker image'
-      run: |
-        docker build \
-          --tag "$GAR_LOCATION-docker.pkg.dev/$PROJECT_ID/$REPOSITORY/$SERVICE-dev:$GITHUB_SHA" \
-          --tag "$GAR_LOCATION-docker.pkg.dev/$PROJECT_ID/$REPOSITORY/$SERVICE-dev:latest" \
-          -f deployment/cloud_run/Dockerfile.dev \
-          .
+      - name: "Configure Docker to use gcloud as credential helper"
+        run: |
+          gcloud auth configure-docker $GAR_LOCATION-docker.pkg.dev
 
-    - name: 'Push Docker image to Artifact Registry'
-      run: |
-        docker push "$GAR_LOCATION-docker.pkg.dev/$PROJECT_ID/$REPOSITORY/$SERVICE-dev:$GITHUB_SHA"
-        docker push "$GAR_LOCATION-docker.pkg.dev/$PROJECT_ID/$REPOSITORY/$SERVICE-dev:latest"
+      - name: "Build Docker image"
+        run: |
+          docker build \
+            --tag "$GAR_LOCATION-docker.pkg.dev/$PROJECT_ID/$REPOSITORY/$SERVICE-dev:$GITHUB_SHA" \
+            --tag "$GAR_LOCATION-docker.pkg.dev/$PROJECT_ID/$REPOSITORY/$SERVICE-dev:latest" \
+            -f deployment/cloud_run/Dockerfile.dev \
+            .
+      
+      - name: "Push Docker image to Artifact Registry"
+        run: |
+          echo "Pushing to project: $PROJECT_ID"
+          echo "Full URL: $GAR_LOCATION-docker.pkg.dev/$PROJECT_ID/$REPOSITORY/$SERVICE-dev:$GITHUB_SHA"
+          
+          # Re-authenticate Docker
+          gcloud auth configure-docker $GAR_LOCATION-docker.pkg.dev --quiet
+          
+          # Push images
+          docker push "$GAR_LOCATION-docker.pkg.dev/$PROJECT_ID/$REPOSITORY/$SERVICE-dev:$GITHUB_SHA"
+          docker push "$GAR_LOCATION-docker.pkg.dev/$PROJECT_ID/$REPOSITORY/$SERVICE-dev:latest"
 
-    - name: 'Deploy to Cloud Run Development'
-      run: |
-        gcloud run deploy $SERVICE-dev \
-          --image "$GAR_LOCATION-docker.pkg.dev/$PROJECT_ID/$REPOSITORY/$SERVICE-dev:$GITHUB_SHA" \
-          --region $REGION \
-          --platform managed \
-          --allow-unauthenticated \
-          --memory 2Gi \
-          --cpu 2 \
-          --min-instances 0 \
-          --max-instances 10 \
-          --port 8501 \
-          --set-env-vars "ENVIRONMENT=development" \
-          --set-env-vars "DEBUG=true" \
-          --set-env-vars "GOOGLE_CLOUD_PROJECT=$PROJECT_ID" \
-          --service-account "${{ secrets.CLOUD_RUN_SA_DEV }}" \
-          --timeout 3600
+      - name: 'Deploy to Cloud Run Development'
+        run: |
+          gcloud run deploy $SERVICE-dev \
+            --image "$GAR_LOCATION-docker.pkg.dev/$PROJECT_ID/$REPOSITORY/$SERVICE-dev:$GITHUB_SHA" \
+            --region $REGION \
+            --platform managed \
+            --allow-unauthenticated \
+            --memory 2Gi \
+            --cpu 2 \
+            --min-instances 0 \
+            --max-instances 10 \
+            --port 8501 \
+            --set-env-vars "ENVIRONMENT=development" \
+            --set-env-vars "DEBUG=true" \
+            --set-env-vars "GOOGLE_CLOUD_PROJECT=$PROJECT_ID" \
+            --service-account "${{ secrets.CLOUD_RUN_SA_DEV }}" \
+            --timeout 3600
 
-    - name: 'Run smoke tests on development'
-      run: |
-        DEV_URL=$(gcloud run services describe $SERVICE-dev --region=$REGION --format='value(status.url)')
-        curl -f "$DEV_URL/health" || exit 1
-        echo "Development deployment successful: $DEV_URL"
+      - name: 'Run smoke tests on development'
+        run: |
+          DEV_URL=$(gcloud run services describe $SERVICE-dev --region=$REGION --format='value(status.url)')
+          curl -f "$DEV_URL/health" || exit 1
+          echo "Development deployment successful: $DEV_URL"
 
   # Deploy to Production (main branch only)
   deploy-prod:
@@ -163,6 +184,9 @@ jobs:
     if: github.ref == 'refs/heads/main' && github.event_name == 'push'
     
     environment: production
+    
+    env:
+      PROJECT_ID: ${{ secrets.GCP_PROJECT_ID_PROD }}  # Environment-specific project ID
     
     steps:
     - name: Checkout code
@@ -191,6 +215,7 @@ jobs:
 
     - name: 'Push Docker image to Artifact Registry'
       run: |
+        echo "Pushing to production project: $PROJECT_ID"
         docker push "$GAR_LOCATION-docker.pkg.dev/$PROJECT_ID/$REPOSITORY/$SERVICE:$GITHUB_SHA"
         docker push "$GAR_LOCATION-docker.pkg.dev/$PROJECT_ID/$REPOSITORY/$SERVICE:latest"
 
@@ -253,6 +278,9 @@ jobs:
     if: github.event_name == 'workflow_dispatch'
     
     environment: production
+    
+    env:
+      PROJECT_ID: ${{ secrets.GCP_PROJECT_ID_PROD }}
     
     steps:
     - name: 'Authenticate to Google Cloud'
