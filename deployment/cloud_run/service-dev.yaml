@@ -1,0 +1,53 @@
+# Development Cloud Run service configuration
+apiVersion: serving.knative.dev/v1
+kind: Service
+metadata:
+  name: wattsmybill-app-dev
+  annotations:
+    run.googleapis.com/ingress: all
+    run.googleapis.com/ingress-status: all
+spec:
+  template:
+    metadata:
+      annotations:
+        run.googleapis.com/execution-environment: gen2
+        run.googleapis.com/cpu-throttling: 'false'
+        autoscaling.knative.dev/minScale: '0'
+        autoscaling.knative.dev/maxScale: '10'
+    spec:
+      containerConcurrency: 80
+      timeoutSeconds: 3600
+      serviceAccountName: wattsmybill-run-dev@wattsmybill-dev.iam.gserviceaccount.com
+      containers:
+      - image: australia-southeast1-docker.pkg.dev/wattsmybill-dev/wattsmybill/wattsmybill-app-dev:latest
+        ports:
+        - name: http1
+          containerPort: 8501
+        env:
+        - name: ENVIRONMENT
+          value: development
+        - name: DEBUG
+          value: 'true'
+        - name: GOOGLE_CLOUD_PROJECT
+          value: wattsmybill-dev
+        resources:
+          limits:
+            cpu: '2'
+            memory: 2Gi
+          requests:
+            cpu: '1'
+            memory: 1Gi
+        livenessProbe:
+          httpGet:
+            path: /health
+            port: 8501
+          initialDelaySeconds: 30
+          periodSeconds: 30
+          timeoutSeconds: 10
+        readinessProbe:
+          httpGet:
+            path: /health
+            port: 8501
+          initialDelaySeconds: 10
+          periodSeconds: 10
+          timeoutSeconds: 5
