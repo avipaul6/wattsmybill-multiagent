@@ -153,10 +153,22 @@ jobs:
             --tag "$GAR_LOCATION-docker.pkg.dev/$PROJECT_ID/$REPOSITORY/$SERVICE-dev:latest" \
             -f deployment/cloud_run/Dockerfile.dev \
             .
-
+      
       - name: "Push Docker image to Artifact Registry"
         run: |
-          echo "Pushing to: $GAR_LOCATION-docker.pkg.dev/$PROJECT_ID/$REPOSITORY/$SERVICE-dev:$GITHUB_SHA"
+          # Re-authenticate Docker right before push
+          gcloud auth configure-docker australia-southeast1-docker.pkg.dev --quiet
+          
+          # Verify authentication worked
+          echo "Testing Docker authentication:"
+          docker-credential-gcloud list
+          
+          # Show the exact URLs we're pushing to
+          echo "Pushing to:"
+          echo "  $GAR_LOCATION-docker.pkg.dev/$PROJECT_ID/$REPOSITORY/$SERVICE-dev:$GITHUB_SHA"
+          echo "  $GAR_LOCATION-docker.pkg.dev/$PROJECT_ID/$REPOSITORY/$SERVICE-dev:latest"
+          
+          # Push images
           docker push "$GAR_LOCATION-docker.pkg.dev/$PROJECT_ID/$REPOSITORY/$SERVICE-dev:$GITHUB_SHA"
           docker push "$GAR_LOCATION-docker.pkg.dev/$PROJECT_ID/$REPOSITORY/$SERVICE-dev:latest"
 
