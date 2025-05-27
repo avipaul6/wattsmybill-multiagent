@@ -53,17 +53,18 @@ wattsmybill-multiagent/
 │   ├── __init__.py
 │   ├── agents/                        # Individual agent implementations
 │   │   ├── __init__.py
-│   │   ├── base_agent.py             # Base agent class
 │   │   ├── bill_analyzer.py          # Bill analysis agent
 │   │   ├── market_researcher.py      # Market research agent
 │   │   ├── savings_calculator.py     # Savings calculation agent
 │   │   ├── rebate_hunter.py          # Rebate finding agent
 │   │   ├── usage_optimizer.py        # Usage optimization agent
-│   │   └── orchestrator.py           # Main orchestrator agent
 │   ├── adk_integration/               # Agent Development Kit integration
 │   │   ├── __init__.py
 │   │   ├── agent_factory.py          # Agent creation and management
 │   │   └── task_manager.py           # Task coordination
+│   ├── integrations/                  # Other integration
+│   │   ├── __init__.py
+│   │   ├── australian_energy_api.py     # Australian energy made easy gov API
 │   ├── gcp_services/                  # Google Cloud Platform integrations
 │   │   ├── __init__.py
 │   │   ├── document_ai.py            # Document AI for bill parsing

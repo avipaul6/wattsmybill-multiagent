@@ -45,3 +45,10 @@ streamlit>=1.45.0,<2.0.0
 typing-extensions>=4.8.0
 setuptools>=68.0.0  # Ensure modern setuptools
 wheel>=0.41.0  # For building packages
+
+# NEW FastAPI dependencies
+fastapi>=0.104.0
+uvicorn[standard]>=0.24.0
+python-multipart>=0.0.6
+pydantic>=2.4.0
+gunicorn>=21.2.0
