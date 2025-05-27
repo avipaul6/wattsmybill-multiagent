@@ -14,6 +14,34 @@ from typing import Dict, Any, Optional
 # Add src to path for imports
 sys.path.insert(0, str(Path(__file__).parent / "src"))
 
+# Add at the top of app.py
+import os
+from datetime import datetime
+
+# Health check endpoint
+def health_check():
+    try:
+        # Your health check logic here
+        return {
+            "status": "healthy",
+            "timestamp": datetime.now().isoformat(),
+            "environment": os.getenv('ENVIRONMENT', 'unknown'),
+            "version": "1.0.0"
+        }
+    except Exception as e:
+        return {
+            "status": "unhealthy", 
+            "error": str(e),
+            "timestamp": datetime.now().isoformat()
+        }
+
+# Add health endpoint handling
+query_params = st.experimental_get_query_params()
+if 'health' in query_params:
+    health_result = health_check()
+    st.json(health_result)
+    st.stop()
+
 # Import the ADK-integrated factory that uses your real agents
 try:
     from adk_integration.adk_agent_factory import ADKIntegratedAgentFactory, create_adk_wattsmybill_workflow

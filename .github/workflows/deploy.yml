@@ -1,0 +1,282 @@
+# .github/workflows/deploy.yml
+name: WattsMyBill CI/CD Pipeline
+
+on:
+  push:
+    branches: [ main, develop ]
+  pull_request:
+    branches: [ main, develop ]
+
+env:
+  PROJECT_ID: ${{ secrets.GCP_PROJECT_ID }}
+  GAR_LOCATION: australia-southeast1
+  REPOSITORY: wattsmybill
+  SERVICE: wattsmybill-app
+  REGION: australia-southeast1
+
+jobs:
+  # Testing and Quality Checks
+  test:
+    name: Run Tests and Quality Checks
+    runs-on: ubuntu-latest
+    
+    steps:
+    - name: Checkout code
+      uses: actions/checkout@v4
+
+    - name: Set up Python 3.11
+      uses: actions/setup-python@v4
+      with:
+        python-version: '3.11'
+
+    - name: Cache pip dependencies
+      uses: actions/cache@v3
+      with:
+        path: ~/.cache/pip
+        key: ${{ runner.os }}-pip-${{ hashFiles('**/requirements.txt') }}
+        restore-keys: |
+          ${{ runner.os }}-pip-
+
+    - name: Install dependencies
+      run: |
+        python -m pip install --upgrade pip
+        pip install -r requirements.txt
+        pip install pytest pytest-cov black flake8 safety bandit
+
+    - name: Code formatting check (Black)
+      run: black --check --diff .
+      continue-on-error: true
+
+    - name: Linting (Flake8)
+      run: flake8 src/ --max-line-length=120 --ignore=E203,W503
+      continue-on-error: true
+
+    - name: Security scan (Bandit)
+      run: bandit -r src/ -f json -o bandit-report.json
+      continue-on-error: true
+
+    - name: Dependency vulnerability scan (Safety)
+      run: safety check --json --output safety-report.json
+      continue-on-error: true
+
+    - name: Run unit tests
+      run: |
+        # Test core components
+        python -m pytest tests/ -v --cov=src --cov-report=xml --cov-report=html
+      continue-on-error: true
+
+    - name: Test bill parser
+      run: |
+        cd wip/agent_checks/bill_analyzer
+        python test_bill_parser.py
+      continue-on-error: true
+
+    - name: Test agent integration
+      run: |
+        cd wip/agent_checks/bill_analyzer
+        python test_bill_analyzer.py
+      continue-on-error: true
+
+    - name: Test API integration
+      run: |
+        python wip/test_api_integration.py
+      continue-on-error: true
+
+    - name: Upload test results
+      uses: actions/upload-artifact@v3
+      if: always()
+      with:
+        name: test-results-${{ github.sha }}
+        path: |
+          htmlcov/
+          *.json
+          *.xml
+
+  # Build and Deploy to Development
+  deploy-dev:
+    name: Deploy to Development
+    needs: test
+    runs-on: ubuntu-latest
+    if: github.ref == 'refs/heads/develop' && github.event_name == 'push'
+    
+    environment: development
+    
+    steps:
+    - name: Checkout code
+      uses: actions/checkout@v4
+
+    - id: 'auth'
+      name: 'Authenticate to Google Cloud'
+      uses: 'google-github-actions/auth@v1'
+      with:
+        credentials_json: '${{ secrets.GCP_SA_KEY_DEV }}'
+
+    - name: 'Set up Cloud SDK'
+      uses: 'google-github-actions/setup-gcloud@v1'
+
+    - name: 'Configure Docker to use gcloud as credential helper'
+      run: |
+        gcloud auth configure-docker $GAR_LOCATION-docker.pkg.dev
+
+    - name: 'Build Docker image'
+      run: |
+        docker build \
+          --tag "$GAR_LOCATION-docker.pkg.dev/$PROJECT_ID/$REPOSITORY/$SERVICE-dev:$GITHUB_SHA" \
+          --tag "$GAR_LOCATION-docker.pkg.dev/$PROJECT_ID/$REPOSITORY/$SERVICE-dev:latest" \
+          -f deployment/cloud_run/Dockerfile.dev \
+          .
+
+    - name: 'Push Docker image to Artifact Registry'
+      run: |
+        docker push "$GAR_LOCATION-docker.pkg.dev/$PROJECT_ID/$REPOSITORY/$SERVICE-dev:$GITHUB_SHA"
+        docker push "$GAR_LOCATION-docker.pkg.dev/$PROJECT_ID/$REPOSITORY/$SERVICE-dev:latest"
+
+    - name: 'Deploy to Cloud Run Development'
+      run: |
+        gcloud run deploy $SERVICE-dev \
+          --image "$GAR_LOCATION-docker.pkg.dev/$PROJECT_ID/$REPOSITORY/$SERVICE-dev:$GITHUB_SHA" \
+          --region $REGION \
+          --platform managed \
+          --allow-unauthenticated \
+          --memory 2Gi \
+          --cpu 2 \
+          --min-instances 0 \
+          --max-instances 10 \
+          --port 8501 \
+          --set-env-vars "ENVIRONMENT=development" \
+          --set-env-vars "DEBUG=true" \
+          --set-env-vars "GOOGLE_CLOUD_PROJECT=$PROJECT_ID" \
+          --service-account "${{ secrets.CLOUD_RUN_SA_DEV }}" \
+          --timeout 3600
+
+    - name: 'Run smoke tests on development'
+      run: |
+        DEV_URL=$(gcloud run services describe $SERVICE-dev --region=$REGION --format='value(status.url)')
+        curl -f "$DEV_URL/health" || exit 1
+        echo "Development deployment successful: $DEV_URL"
+
+  # Deploy to Production (main branch only)
+  deploy-prod:
+    name: Deploy to Production
+    needs: test
+    runs-on: ubuntu-latest
+    if: github.ref == 'refs/heads/main' && github.event_name == 'push'
+    
+    environment: production
+    
+    steps:
+    - name: Checkout code
+      uses: actions/checkout@v4
+
+    - id: 'auth'
+      name: 'Authenticate to Google Cloud'
+      uses: 'google-github-actions/auth@v1'
+      with:
+        credentials_json: '${{ secrets.GCP_SA_KEY_PROD }}'
+
+    - name: 'Set up Cloud SDK'
+      uses: 'google-github-actions/setup-gcloud@v1'
+
+    - name: 'Configure Docker to use gcloud as credential helper'
+      run: |
+        gcloud auth configure-docker $GAR_LOCATION-docker.pkg.dev
+
+    - name: 'Build production Docker image'
+      run: |
+        docker build \
+          --tag "$GAR_LOCATION-docker.pkg.dev/$PROJECT_ID/$REPOSITORY/$SERVICE:$GITHUB_SHA" \
+          --tag "$GAR_LOCATION-docker.pkg.dev/$PROJECT_ID/$REPOSITORY/$SERVICE:latest" \
+          -f deployment/cloud_run/Dockerfile.prod \
+          .
+
+    - name: 'Push Docker image to Artifact Registry'
+      run: |
+        docker push "$GAR_LOCATION-docker.pkg.dev/$PROJECT_ID/$REPOSITORY/$SERVICE:$GITHUB_SHA"
+        docker push "$GAR_LOCATION-docker.pkg.dev/$PROJECT_ID/$REPOSITORY/$SERVICE:latest"
+
+    - name: 'Deploy to Cloud Run Production'
+      run: |
+        gcloud run deploy $SERVICE \
+          --image "$GAR_LOCATION-docker.pkg.dev/$PROJECT_ID/$REPOSITORY/$SERVICE:$GITHUB_SHA" \
+          --region $REGION \
+          --platform managed \
+          --allow-unauthenticated \
+          --memory 4Gi \
+          --cpu 4 \
+          --min-instances 1 \
+          --max-instances 50 \
+          --port 8501 \
+          --set-env-vars "ENVIRONMENT=production" \
+          --set-env-vars "DEBUG=false" \
+          --set-env-vars "GOOGLE_CLOUD_PROJECT=$PROJECT_ID" \
+          --service-account "${{ secrets.CLOUD_RUN_SA_PROD }}" \
+          --timeout 3600 \
+          --cpu-throttling \
+          --execution-environment gen2
+
+    - name: 'Run production health checks'
+      run: |
+        PROD_URL=$(gcloud run services describe $SERVICE --region=$REGION --format='value(status.url)')
+        
+        # Health check
+        curl -f "$PROD_URL/health" || exit 1
+        
+        # Basic functionality test
+        curl -f "$PROD_URL/" || exit 1
+        
+        echo "Production deployment successful: $PROD_URL"
+
+    - name: 'Create GitHub Release'
+      if: success()
+      uses: actions/create-release@v1
+      env:
+        GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+      with:
+        tag_name: v${{ github.run_number }}
+        release_name: Release v${{ github.run_number }}
+        body: |
+          🚀 Production deployment successful!
+          
+          **Deployed to:** ${{ env.REGION }}
+          **Commit:** ${{ github.sha }}
+          **Deployed by:** ${{ github.actor }}
+          
+          ## Changes in this release
+          ${{ github.event.head_commit.message }}
+        draft: false
+        prerelease: false
+
+  # Rollback capability
+  rollback:
+    name: Rollback Production
+    runs-on: ubuntu-latest
+    if: github.event_name == 'workflow_dispatch'
+    
+    environment: production
+    
+    steps:
+    - name: 'Authenticate to Google Cloud'
+      uses: 'google-github-actions/auth@v1'
+      with:
+        credentials_json: '${{ secrets.GCP_SA_KEY_PROD }}'
+
+    - name: 'Set up Cloud SDK'
+      uses: 'google-github-actions/setup-gcloud@v1'
+
+    - name: 'Rollback to previous version'
+      run: |
+        # Get previous revision
+        PREVIOUS_REVISION=$(gcloud run revisions list \
+          --service=$SERVICE \
+          --region=$REGION \
+          --format="value(metadata.name)" \
+          --limit=2 | tail -1)
+        
+        echo "Rolling back to revision: $PREVIOUS_REVISION"
+        
+        # Update traffic to previous revision
+        gcloud run services update-traffic $SERVICE \
+          --region=$REGION \
+          --to-revisions=$PREVIOUS_REVISION=100
+        
+        echo "Rollback completed successfully"
