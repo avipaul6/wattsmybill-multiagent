@@ -740,7 +740,6 @@ const WattsMyBillApp = () => {
                   
                   {(() => {
                     const solar = results.bill_analysis.solar_analysis;
-                    const billing = getBillingPeriodText(results);
                     
                     return (
                       <>
