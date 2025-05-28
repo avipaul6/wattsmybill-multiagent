@@ -32,10 +32,6 @@ jobs:
       uses: actions/setup-node@v4
       with:
         node-version: '18'
-        cache: 'npm'
-        cache-dependency-path: 'wattsmybill-frontend/package-lock.json'
-        cache: 'npm'
-        cache-dependency-path: 'wattsmybill-frontend/package-lock.json'
 
     - name: Cache pip dependencies
       uses: actions/cache@v3
@@ -86,7 +82,7 @@ jobs:
     - name: Test React app
       run: |
         cd wattsmybill-frontend
-        npm test -- --coverage --testResultsProcessor=jest-junit --watchAll=false
+        npm test -- --coverage --watchAll=false
       continue-on-error: true
 
     - name: Test FastAPI endpoints
@@ -134,8 +130,6 @@ jobs:
         uses: actions/setup-node@v4
         with:
           node-version: '18'
-          cache: 'npm'
-          cache-dependency-path: 'wattsmybill-frontend/package-lock.json'
 
       - name: Build React frontend
         run: |
@@ -404,4 +398,4 @@ jobs:
         PROD_URL=$(gcloud run services describe $SERVICE --region=$REGION --format='value(status.url)')
         curl -f "$PROD_URL/health" || exit 1
         
-        echo "✅ Rollback completed successfully"
+        echo "✅ Rollback completed successfully
