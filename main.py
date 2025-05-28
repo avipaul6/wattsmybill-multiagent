@@ -1,9 +1,11 @@
 """
-FastAPI Backend for WattsMyBill - Fixed Import Structure
+FastAPI Backend for WattsMyBill - Fixed Static File Serving
 File: main.py
 """
-from fastapi import FastAPI, UploadFile, File, HTTPException, BackgroundTasks
+from fastapi import FastAPI, UploadFile, File, HTTPException, BackgroundTasks, Request
 from fastapi.middleware.cors import CORSMiddleware
+from fastapi.staticfiles import StaticFiles
+from fastapi.responses import FileResponse, JSONResponse
 from pydantic import BaseModel
 from typing import Dict, Any, Optional, List
 import uuid
@@ -12,52 +14,42 @@ import asyncio
 from datetime import datetime
 import sys
 import os
+import logging
 from pathlib import Path
 
-# Add src to path for imports - FIXED
+# Configure logging
+logging.basicConfig(level=logging.INFO)
+logger = logging.getLogger(__name__)
+
+# Add src to path to import your existing agents
 current_dir = Path(__file__).parent
 src_path = current_dir / "src"
 sys.path.insert(0, str(src_path))
 
-# Import your existing agents - with better error handling
+# Import your existing agents
 AGENTS_AVAILABLE = False
 try:
     from agents.bill_analyzer import BillAnalyzerAgent
     from agents.market_researcher import MarketResearcherAgent
-    print("✅ Your existing agents imported successfully!")
+    logger.info("✅ Your existing agents imported successfully!")
     AGENTS_AVAILABLE = True
 except ImportError as e:
-    print(f"⚠️  Could not import agents: {e}")
-    print(f"   Looking in: {src_path}")
-    print(f"   Current working directory: {os.getcwd()}")
+    logger.warning(f"⚠️  Could not import agents: {e}")
     AGENTS_AVAILABLE = False
 
-# Try ADK integration
-ADK_AVAILABLE = False
-try:
-    from adk_integration.adk_agent_factory import create_adk_wattsmybill_workflow
-    print("✅ ADK integration available!")
-    ADK_AVAILABLE = True
-except ImportError as e:
-    print(f"⚠️  ADK integration not available: {e}")
-    ADK_AVAILABLE = False
-
+# Initialize FastAPI
 app = FastAPI(
-    title="WattsMyBill API", 
+    title="WattsMyBill",
     version="2.0",
     description="AI-powered Australian energy bill analysis"
 )
 
-# CORS for React frontend
+# CORS middleware
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=[
-        "http://localhost:3000",  # React dev server
-        "http://127.0.0.1:3000",  # Alternative localhost
-        "https://yourdomain.com",  # Your production domain
-    ],
+    allow_origins=["*"],
     allow_credentials=True,
-    allow_methods=["GET", "POST", "PUT", "DELETE"],
+    allow_methods=["*"],
     allow_headers=["*"],
 )
 
@@ -68,23 +60,27 @@ class AnalysisResponse(BaseModel):
     message: str
     progress: int = 0
 
-# In-memory storage (use Redis in production)
+# In-memory storage
 analysis_store: Dict[str, Dict] = {}
 
-@app.get("/")
-async def root():
-    return {
-        "service": "WattsMyBill API",
-        "version": "2.0",
-        "status": "operational",
-        "agents_available": AGENTS_AVAILABLE,
-        "adk_available": ADK_AVAILABLE,
-        "agents": ["bill_analyzer", "market_researcher", "rebate_hunter", "usage_optimizer"],
-        "powered_by": "Google Cloud ADK",
-        "frontend": "React + FastAPI",
-        "src_path": str(src_path),
-        "current_dir": os.getcwd()
-    }
+# Check for static files and mount them correctly
+static_dir = current_dir / "static"
+if static_dir.exists():
+    # Check if it's a React build directory structure
+    if (static_dir / "static").exists():
+        # React creates build/static/js and build/static/css
+        app.mount("/static", StaticFiles(directory=static_dir / "static"), name="static")
+        logger.info(f"✅ Mounted React static files from {static_dir / 'static'}")
+    else:
+        # Direct static files
+        app.mount("/static", StaticFiles(directory=static_dir), name="static")
+        logger.info(f"✅ Mounted static files from {static_dir}")
+    
+    logger.info(f"📂 Static directory contents: {list(static_dir.iterdir())}")
+    if (static_dir / "static").exists():
+        logger.info(f"📂 React static contents: {list((static_dir / 'static').iterdir())}")
+else:
+    logger.warning(f"⚠️  Static directory not found: {static_dir}")
 
 @app.get("/health")
 async def health_check():
@@ -93,10 +89,27 @@ async def health_check():
         "status": "healthy",
         "timestamp": datetime.now().isoformat(),
         "agents_available": AGENTS_AVAILABLE,
-        "adk_available": ADK_AVAILABLE
+        "environment": os.getenv("ENVIRONMENT", "development"),
+        "static_files": static_dir.exists() if 'static_dir' in locals() else False,
+        "static_structure": {
+            "static_dir_exists": static_dir.exists(),
+            "react_static_exists": (static_dir / "static").exists() if static_dir.exists() else False,
+            "index_html_exists": (static_dir / "index.html").exists() if static_dir.exists() else False
+        }
     }
 
-@app.post("/upload-bill", response_model=AnalysisResponse)
+@app.get("/api")
+async def api_root():
+    """API information endpoint"""
+    return {
+        "service": "WattsMyBill API",
+        "version": "2.0",
+        "status": "operational",
+        "agents_available": AGENTS_AVAILABLE,
+        "environment": os.getenv("ENVIRONMENT", "development")
+    }
+
+@app.post("/api/upload-bill", response_model=AnalysisResponse)
 async def upload_bill(
     background_tasks: BackgroundTasks,
     file: UploadFile = File(...),
@@ -107,11 +120,11 @@ async def upload_bill(
 ):
     """Upload bill and start analysis"""
     
-    print(f"📤 Received file upload: {file.filename}")
+    logger.info(f"📤 Received file upload: {file.filename}")
     
     # Validate file
     if not file.filename.lower().endswith(('.pdf', '.jpg', '.jpeg', '.png')):
-        raise HTTPException(status_code=400, detail="Invalid file type. Please upload PDF, JPG, JPEG, or PNG files.")
+        raise HTTPException(status_code=400, detail="Invalid file type")
     
     # Generate analysis ID
     analysis_id = str(uuid.uuid4())
@@ -121,7 +134,7 @@ async def upload_bill(
         file_content = await file.read()
         file_type = 'pdf' if file.filename.lower().endswith('.pdf') else 'image'
         
-        print(f"📊 Starting analysis {analysis_id} for {file.filename} ({len(file_content)} bytes)")
+        logger.info(f"📊 Starting analysis {analysis_id}")
         
         # Store analysis request
         analysis_store[analysis_id] = {
@@ -151,10 +164,10 @@ async def upload_bill(
         )
         
     except Exception as e:
-        print(f"❌ Upload failed: {str(e)}")
+        logger.error(f"❌ Upload failed: {str(e)}")
         raise HTTPException(status_code=500, detail=f"Failed to process file: {str(e)}")
 
-@app.get("/analysis/{analysis_id}/status")
+@app.get("/api/analysis/{analysis_id}/status")
 async def get_analysis_status(analysis_id: str):
     """Get analysis status and progress"""
     
@@ -173,7 +186,7 @@ async def get_analysis_status(analysis_id: str):
         "completed_at": analysis.get("completed_at")
     }
 
-@app.get("/analysis/{analysis_id}/results")
+@app.get("/api/analysis/{analysis_id}/results")
 async def get_analysis_results(analysis_id: str):
     """Get complete analysis results"""
     
@@ -183,7 +196,7 @@ async def get_analysis_results(analysis_id: str):
     analysis = analysis_store[analysis_id]
     
     if analysis["status"] == "processing":
-        raise HTTPException(status_code=202, detail="Analysis still in progress. Please check status endpoint.")
+        raise HTTPException(status_code=202, detail="Analysis still in progress")
     elif analysis["status"] == "failed":
         raise HTTPException(status_code=500, detail=f"Analysis failed: {analysis.get('error', 'Unknown error')}")
     elif analysis["status"] != "completed":
@@ -195,22 +208,18 @@ async def get_analysis_results(analysis_id: str):
         "bill_analysis": analysis.get("bill_analysis"),
         "market_research": analysis.get("market_research"),
         "rebate_analysis": analysis.get("rebate_analysis"),
-        "usage_optimization": analysis.get("usage_optimization"),
-        "final_recommendations": analysis.get("final_recommendations"),
         "total_savings": analysis.get("total_savings"),
-        "file_name": analysis.get("file_name"),
         "completed_at": analysis.get("completed_at")
     }
 
 async def run_analysis_task(analysis_id: str):
     """Background task to run analysis"""
     
-    print(f"🚀 Starting background analysis for {analysis_id}")
+    logger.info(f"🚀 Starting background analysis for {analysis_id}")
     
     try:
         analysis = analysis_store[analysis_id]
         
-        # Helper function to update progress
         def update_progress(step: str, progress: int, message: str):
             analysis_store[analysis_id].update({
                 "status": "processing",
@@ -218,7 +227,7 @@ async def run_analysis_task(analysis_id: str):
                 "message": message,
                 "current_step": step
             })
-            print(f"📊 {analysis_id}: {progress}% - {message}")
+            logger.info(f"📊 {analysis_id}: {progress}% - {message}")
         
         if AGENTS_AVAILABLE:
             await run_real_agent_analysis(analysis_id, update_progress)
@@ -226,7 +235,7 @@ async def run_analysis_task(analysis_id: str):
             await run_mock_analysis(analysis_id, update_progress)
             
     except Exception as e:
-        print(f"❌ Analysis {analysis_id} failed: {str(e)}")
+        logger.error(f"❌ Analysis {analysis_id} failed: {str(e)}")
         analysis_store[analysis_id].update({
             "status": "failed",
             "progress": 0,
@@ -244,8 +253,8 @@ async def run_real_agent_analysis(analysis_id: str, update_progress):
     preferences = analysis["preferences"]
     
     # Step 1: Bill Analysis (25%)
-    update_progress("bill_analysis", 25, "🔍 Using your real BillAnalyzerAgent...")
-    await asyncio.sleep(1)  # Simulate processing time
+    update_progress("bill_analysis", 25, "🔍 Analyzing your energy bill...")
+    await asyncio.sleep(1)
     
     bill_analyzer = BillAnalyzerAgent()
     bill_analysis = bill_analyzer.analyze_bill(
@@ -256,7 +265,7 @@ async def run_real_agent_analysis(analysis_id: str, update_progress):
     analysis_store[analysis_id]["bill_analysis"] = bill_analysis
     
     # Step 2: Market Research (50%)
-    update_progress("market_research", 50, "📊 Using your real MarketResearcherAgent...")
+    update_progress("market_research", 50, "📊 Researching better energy plans...")
     await asyncio.sleep(1)
     
     market_researcher = MarketResearcherAgent()
@@ -265,16 +274,9 @@ async def run_real_agent_analysis(analysis_id: str, update_progress):
     if bill_data:
         market_research = market_researcher.research_better_plans(bill_data)
     else:
-        # Fallback market research
         market_research = {
-            "best_plan": {
-                "retailer": "Alinta Energy",
-                "plan_name": "Home Deal Plus",
-                "annual_savings": 420
-            },
-            "savings_analysis": {
-                "max_annual_savings": 420
-            }
+            "best_plan": {"retailer": "Alinta Energy", "plan_name": "Home Deal Plus", "annual_savings": 420},
+            "savings_analysis": {"max_annual_savings": 420}
         }
     
     analysis_store[analysis_id]["market_research"] = market_research
@@ -292,7 +294,6 @@ async def run_real_agent_analysis(analysis_id: str, update_progress):
     # Step 4: Complete (100%)
     update_progress("complete", 100, "✅ Analysis complete!")
     
-    # Calculate total savings
     plan_savings = market_research.get("savings_analysis", {}).get("max_annual_savings", 0)
     rebate_savings = rebate_analysis.get("total_rebate_value", 0)
     total_savings = plan_savings + rebate_savings
@@ -317,35 +318,18 @@ async def run_mock_analysis(analysis_id: str, update_progress):
     
     update_progress("complete", 100, "✅ Demo analysis complete!")
     
-    # Mock results
     analysis_store[analysis_id].update({
         "status": "completed",
-        "bill_analysis": {
-            "cost_breakdown": {"total_cost": 2850},
-            "usage_profile": {"total_kwh": 8240},
-            "efficiency_score": 72
-        },
-        "market_research": {
-            "best_plan": {
-                "retailer": "Alinta Energy",
-                "plan_name": "Home Deal Plus",
-                "annual_savings": 420
-            }
-        },
-        "rebate_analysis": {
-            "total_rebate_value": 572,
-            "rebate_count": 3
-        },
+        "bill_analysis": {"cost_breakdown": {"total_cost": 2850}, "usage_profile": {"total_kwh": 8240}, "efficiency_score": 72},
+        "market_research": {"best_plan": {"retailer": "Alinta Energy", "plan_name": "Home Deal Plus", "annual_savings": 420}},
+        "rebate_analysis": {"total_rebate_value": 572, "rebate_count": 3},
         "total_savings": 992,
         "completed_at": datetime.now().isoformat()
     })
 
 def generate_rebate_analysis(state: str, has_solar: bool) -> Dict[str, Any]:
     """Generate rebate analysis"""
-    
-    rebates = [
-        {"name": "Energy Bill Relief Fund", "value": 300, "type": "federal"},
-    ]
+    rebates = [{"name": "Energy Bill Relief Fund", "value": 300, "type": "federal"}]
     
     state_rebates = {
         "QLD": {"name": "Queensland Electricity Rebate", "value": 372},
@@ -356,31 +340,38 @@ def generate_rebate_analysis(state: str, has_solar: bool) -> Dict[str, Any]:
     if state in state_rebates:
         rebates.append(state_rebates[state])
     
-    total_value = sum(r["value"] for r in rebates)
-    
     return {
-        "total_rebate_value": total_value,
+        "total_rebate_value": sum(r["value"] for r in rebates),
         "rebate_count": len(rebates),
         "applicable_rebates": rebates
     }
 
-@app.get("/test-agents")
-async def test_agents():
-    """Test agent availability"""
-    return {
-        "agents_available": AGENTS_AVAILABLE,
-        "adk_available": ADK_AVAILABLE,
-        "timestamp": datetime.now().isoformat(),
-        "message": "Agents working!" if AGENTS_AVAILABLE else "Using demo mode - agents not found"
-    }
+# Serve React app for all non-API routes
+@app.get("/{full_path:path}")
+async def serve_react_app(full_path: str):
+    """Serve React app for all non-API routes"""
+    
+    # Don't serve React for API routes
+    if full_path.startswith("api/"):
+        raise HTTPException(status_code=404, detail="API endpoint not found")
+    
+    # Check if static files exist
+    if not static_dir.exists():
+        return JSONResponse({"error": "React app not built"}, status_code=503)
+    
+    # Serve index.html for all routes (React Router will handle routing)
+    index_file = static_dir / "index.html"
+    if index_file.exists():
+        return FileResponse(index_file, media_type="text/html")
+    else:
+        return JSONResponse({"error": "React app not found"}, status_code=503)
 
 if __name__ == "__main__":
     import uvicorn
-    print("🚀 Starting WattsMyBill FastAPI backend...")
-    print(f"   Agents available: {AGENTS_AVAILABLE}")
-    print(f"   ADK available: {ADK_AVAILABLE}")
-    print("   Access API docs at: http://localhost:8000/docs")
-    print("   React frontend should run on: http://localhost:3000")
+    port = int(os.getenv("PORT", 8501))
+    logger.info(f"🚀 Starting WattsMyBill on port {port}")
+    logger.info(f"   Environment: {os.getenv('ENVIRONMENT', 'development')}")
+    logger.info(f"   Agents available: {AGENTS_AVAILABLE}")
+    logger.info(f"   Static files: {static_dir.exists() if 'static_dir' in locals() else False}")
     
-    # Use reload=False to avoid the warning
-    uvicorn.run(app, host="0.0.0.0", port=8000, reload=False)
+    uvicorn.run(app, host="0.0.0.0", port=port, reload=True)

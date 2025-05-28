@@ -1,5 +1,4 @@
-# deployment/cloud_run/service-prod.yaml
-# Production Cloud Run service configuration
+# Production Cloud Run service configuration - React + FastAPI
 apiVersion: serving.knative.dev/v1
 kind: Service
 metadata:
@@ -7,6 +6,7 @@ metadata:
   annotations:
     run.googleapis.com/ingress: all
     run.googleapis.com/ingress-status: all
+    run.googleapis.com/description: "WattsMyBill Production - React Frontend + FastAPI Backend"
 spec:
   template:
     metadata:
@@ -15,6 +15,9 @@ spec:
         run.googleapis.com/cpu-throttling: 'true'
         autoscaling.knative.dev/minScale: '1'
         autoscaling.knative.dev/maxScale: '50'
+        # Production optimizations
+        run.googleapis.com/memory-limit: 4Gi
+        run.googleapis.com/cpu-limit: 4
     spec:
       containerConcurrency: 100
       timeoutSeconds: 3600
@@ -31,6 +34,13 @@ spec:
           value: 'false'
         - name: GOOGLE_CLOUD_PROJECT
           value: wattsmybill-prod
+        - name: PORT
+          value: '8501'
+        # Production performance settings
+        - name: PYTHONUNBUFFERED
+          value: '1'
+        - name: PYTHONDONTWRITEBYTECODE
+          value: '1'
         resources:
           limits:
             cpu: '4'
@@ -38,17 +48,35 @@ spec:
           requests:
             cpu: '2'
             memory: 2Gi
+        # Updated health checks for FastAPI
         livenessProbe:
           httpGet:
             path: /health
             port: 8501
+            httpHeaders:
+            - name: User-Agent
+              value: GoogleHC/1.0
           initialDelaySeconds: 60
           periodSeconds: 60
           timeoutSeconds: 15
+          failureThreshold: 3
         readinessProbe:
           httpGet:
             path: /health
             port: 8501
+            httpHeaders:
+            - name: User-Agent
+              value: GoogleHC/1.0
           initialDelaySeconds: 30
           periodSeconds: 30
           timeoutSeconds: 10
+          failureThreshold: 2
+        # Startup probe for initial container startup
+        startupProbe:
+          httpGet:
+            path: /health
+            port: 8501
+          initialDelaySeconds: 10
+          periodSeconds: 10
+          timeoutSeconds: 5
+          failureThreshold: 6

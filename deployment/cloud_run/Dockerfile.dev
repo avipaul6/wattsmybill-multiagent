@@ -1,4 +1,15 @@
-# Development Dockerfile for WattsMyBill
+# Development Dockerfile for WattsMyBill - Fixed for FastAPI + React
+FROM node:18-alpine AS frontend-builder
+
+# Build React frontend for development
+WORKDIR /app/frontend
+COPY wattsmybill-frontend/package*.json ./
+RUN npm ci
+
+COPY wattsmybill-frontend/ ./
+RUN npm run build
+
+# Python development stage
 FROM python:3.13-slim
 
 # Set environment variables
@@ -29,15 +40,30 @@ RUN pip install --no-cache-dir --upgrade pip && \
     pip install --no-cache-dir -r requirements.txt && \
     pip install --no-cache-dir pytest pytest-cov black flake8 ipython
 
+# Copy React build from frontend stage
+COPY --from=frontend-builder /app/frontend/build ./static
+
 # Copy application code
 COPY . .
 
-# Health check
+# Create startup script for development
+RUN echo '#!/bin/bash\n\
+echo "🚀 Starting WattsMyBill Development (FastAPI + React)"\n\
+echo "📊 Environment: $ENVIRONMENT"\n\
+echo "📂 Static files location: /app/static"\n\
+echo "🌐 API will serve React app and API endpoints"\n\
+echo "🔧 Development mode with auto-reload"\n\
+PORT=${PORT:-8501}\n\
+echo "🌐 Starting on port $PORT"\n\
+exec uvicorn main:app --host 0.0.0.0 --port $PORT --reload\n\
+' > /app/start-dev.sh && chmod +x /app/start-dev.sh
+
+# Health check for FastAPI
 HEALTHCHECK --interval=60s --timeout=15s --start-period=10s --retries=3 \
-    CMD curl -f http://localhost:8501/health || exit 1
+    CMD curl -f http://localhost:${PORT:-8501}/health || exit 1
 
 # Expose port
 EXPOSE 8501
 
 # Development startup command with auto-reload
-CMD ["streamlit", "run", "app.py", "--server.port=8501", "--server.address=0.0.0.0", "--server.enableCORS=false", "--server.enableXsrfProtection=false", "--server.runOnSave=true"]
+CMD ["/app/start-dev.sh"]
