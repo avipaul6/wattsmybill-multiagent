@@ -1,0 +1,87 @@
+name: Deploy ETL Service
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - 'etl-service/**'
+      - '.github/workflows/etl-service.yml'
+  workflow_dispatch:  # Allow manual triggers
+
+env:
+  PROJECT_ID: wattsmybill-dev
+  SERVICE_NAME: energy-plans-etl
+  REGION: australia-southeast1
+
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+    
+    permissions:
+      contents: read
+      id-token: write
+
+    steps:
+    - name: Checkout
+      uses: actions/checkout@v4
+
+    - name: Authenticate to Google Cloud
+      uses: google-github-actions/auth@v2
+      with:
+        workload_identity_provider: ${{ secrets.WIF_PROVIDER }}
+        service_account: ${{ secrets.WIF_SERVICE_ACCOUNT }}
+
+    - name: Set up Cloud SDK
+      uses: google-github-actions/setup-gcloud@v2
+
+    - name: Deploy to Cloud Run
+      run: |
+        cd etl-service
+        gcloud run deploy $SERVICE_NAME \
+          --source . \
+          --platform managed \
+          --region $REGION \
+          --project $PROJECT_ID \
+          --allow-unauthenticated \
+          --memory 2Gi \
+          --cpu 2 \
+          --timeout 3600 \
+          --max-instances 3 \
+          --set-env-vars "GOOGLE_CLOUD_PROJECT=$PROJECT_ID"
+
+    - name: Update Cloud Scheduler (if needed)
+      run: |
+        cd etl-service/deploy
+        
+        # Get service URL
+        SERVICE_URL=$(gcloud run services describe $SERVICE_NAME --region $REGION --project $PROJECT_ID --format="value(status.url)")
+        
+        # Update scheduler jobs with new URL (only if they exist)
+        if gcloud scheduler jobs describe weekly-plans-extraction --location $REGION --project $PROJECT_ID &>/dev/null; then
+          echo "Updating existing scheduler jobs..."
+          
+          gcloud scheduler jobs update http weekly-plans-extraction \
+            --location $REGION \
+            --uri "$SERVICE_URL/extract-plans"
+          
+          gcloud scheduler jobs update http daily-tariff-updates \
+            --location $REGION \
+            --uri "$SERVICE_URL/extract-tariffs"
+          
+          gcloud scheduler jobs update http monthly-full-etl \
+            --location $REGION \
+            --uri "$SERVICE_URL/full-etl"
+        else
+          echo "Creating new scheduler jobs..."
+          ./schedule.sh
+        fi
+
+    - name: Test deployment
+      run: |
+        SERVICE_URL=$(gcloud run services describe $SERVICE_NAME --region $REGION --project $PROJECT_ID --format="value(status.url)")
+        
+        # Test health endpoint
+        curl -f "$SERVICE_URL/health" || exit 1
+        
+        echo "✅ ETL Service deployed successfully!"
+        echo "🌐 Service URL: $SERVICE_URL"
