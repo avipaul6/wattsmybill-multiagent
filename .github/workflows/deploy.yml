@@ -33,7 +33,9 @@ jobs:
       with:
         node-version: '18'
         cache: 'npm'
-        cache-dependency-path: wattsmybill-frontend/package-lock.json
+        cache-dependency-path: 'wattsmybill-frontend/package-lock.json'
+        cache: 'npm'
+        cache-dependency-path: 'wattsmybill-frontend/package-lock.json'
 
     - name: Cache pip dependencies
       uses: actions/cache@v3
@@ -133,7 +135,7 @@ jobs:
         with:
           node-version: '18'
           cache: 'npm'
-          cache-dependency-path: wattsmybill-frontend/package-lock.json
+          cache-dependency-path: 'wattsmybill-frontend/package-lock.json'
 
       - name: Build React frontend
         run: |
@@ -235,8 +237,6 @@ jobs:
       uses: actions/setup-node@v4
       with:
         node-version: '18'
-        cache: 'npm'
-        cache-dependency-path: wattsmybill-frontend/package-lock.json
 
     - name: Build React frontend for production
       run: |
