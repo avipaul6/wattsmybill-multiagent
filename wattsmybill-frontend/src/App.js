@@ -1,4 +1,4 @@
-// src/App.js - Enhanced version with proper validation and GitHub link
+// src/App.js - Complete React Frontend with Bill Analysis + Top 3 Plan Switching
 import React, { useState, useRef, useEffect } from 'react';
 import axios from 'axios';
 
@@ -54,17 +54,6 @@ const styles = {
     color: '#6b7280',
     margin: 0
   },
-  githubLink: {
-    display: 'flex',
-    alignItems: 'center',
-    gap: '0.5rem',
-    color: '#6b7280',
-    textDecoration: 'none',
-    fontSize: '0.875rem',
-    padding: '0.5rem 1rem',
-    borderRadius: '0.5rem',
-    transition: 'all 0.3s ease'
-  },
   main: {
     maxWidth: '72rem',
     margin: '0 auto',
@@ -112,15 +101,6 @@ const styles = {
     fontSize: '3rem',
     marginBottom: '1rem'
   },
-  supportedCompanies: {
-    background: '#f8fafc',
-    border: '1px solid #e2e8f0',
-    borderRadius: '1rem',
-    padding: '1.5rem',
-    margin: '2rem auto',
-    maxWidth: '38rem',
-    textAlign: 'center'
-  },
   progressContainer: {
     margin: '4rem 0',
     background: 'white',
@@ -128,81 +108,63 @@ const styles = {
     padding: '2rem',
     boxShadow: '0 4px 6px rgba(0, 0, 0, 0.05)'
   },
-  progressSteps: {
-    display: 'flex',
-    alignItems: 'center',
-    justifyContent: 'space-between',
-    marginBottom: '2rem',
-    flexWrap: 'wrap',
-    gap: '1rem'
+  planCard: {
+    background: 'white',
+    border: '2px solid #e5e7eb',
+    borderRadius: '1rem',
+    padding: '1.5rem',
+    margin: '1rem 0',
+    transition: 'all 0.3s ease',
+    cursor: 'pointer'
   },
-  progressStep: {
-    flex: 1,
-    minWidth: '120px',
-    display: 'flex',
-    flexDirection: 'column',
-    alignItems: 'center'
+  planCardBest: {
+    borderColor: '#16a34a',
+    background: '#f0fdf4',
+    position: 'relative'
   },
-  progressIcon: {
-    width: '3rem',
-    height: '3rem',
-    borderRadius: '50%',
-    display: 'flex',
-    alignItems: 'center',
-    justifyContent: 'center',
-    marginBottom: '0.75rem',
-    fontSize: '1.5rem',
-    transition: 'all 0.5s ease'
-  },
-  progressIconCompleted: {
+  bestPlanBadge: {
+    position: 'absolute',
+    top: '-0.5rem',
+    right: '1rem',
     background: '#16a34a',
     color: 'white',
-    transform: 'scale(1.1)'
+    padding: '0.25rem 0.75rem',
+    borderRadius: '1rem',
+    fontSize: '0.75rem',
+    fontWeight: '600'
   },
-  progressIconCurrent: {
-    background: '#3b82f6',
+  switchButton: {
+    background: 'linear-gradient(135deg, #16a34a, #15803d)',
     color: 'white',
-    animation: 'pulse 2s infinite',
-    transform: 'scale(1.1)'
-  },
-  progressIconPending: {
-    background: '#e5e7eb',
-    color: '#9ca3af'
-  },
-  resultsGrid: {
-    display: 'grid',
-    gridTemplateColumns: 'repeat(auto-fit, minmax(300px, 1fr))',
-    gap: '2rem',
-    margin: '4rem 0'
-  },
-  resultCard: {
-    background: 'white',
-    borderRadius: '1.5rem',
-    padding: '2rem',
-    boxShadow: '0 10px 25px rgba(0, 0, 0, 0.1)',
-    border: '1px solid rgba(229, 231, 235, 0.5)',
-    transition: 'all 0.3s ease'
-  },
-  cardHeader: {
-    display: 'flex',
-    alignItems: 'center',
-    gap: '0.75rem',
-    marginBottom: '1.5rem'
-  },
-  cardIcon: {
-    width: '2.5rem',
-    height: '2.5rem',
+    border: 'none',
     borderRadius: '0.75rem',
-    display: 'flex',
-    alignItems: 'center',
-    justifyContent: 'center',
-    fontSize: '1.25rem'
+    padding: '0.75rem 1.5rem',
+    fontWeight: '600',
+    cursor: 'pointer',
+    transition: 'all 0.3s ease',
+    width: '100%',
+    marginTop: '1rem',
+    fontSize: '1rem'
   },
-  cardTitle: {
-    fontSize: '1.25rem',
-    fontWeight: '700',
-    color: '#111827',
-    margin: 0
+  confidenceBadge: {
+    padding: '0.25rem 0.5rem',
+    borderRadius: '0.5rem',
+    fontSize: '0.75rem',
+    fontWeight: '500',
+    display: 'inline-block',
+    marginLeft: '0.5rem'
+  },
+  highConfidence: {
+    background: '#dcfce7',
+    color: '#166534'
+  },
+  mediumConfidence: {
+    background: '#fef3c7',
+    color: '#92400e'
+  },
+  lowConfidence: {
+    background: '#fee2e2',
+    color: '#991b1b'
   },
   button: {
     background: 'linear-gradient(135deg, #3b82f6, #1d4ed8)',
@@ -226,14 +188,40 @@ const styles = {
     maxWidth: '32rem',
     margin: '0 auto 1.5rem'
   },
-  billingContext: {
-    background: '#f0f9ff',
-    border: '1px solid #93c5fd',
+  successMessage: {
+    background: '#f0fdf4',
+    border: '1px solid #16a34a',
+    color: '#166534',
+    padding: '1rem',
+    borderRadius: '0.75rem',
+    marginBottom: '1.5rem',
+    textAlign: 'center'
+  },
+  locationInput: {
+    background: 'white',
+    border: '1px solid #d1d5db',
     borderRadius: '0.75rem',
     padding: '1rem',
-    margin: '1rem 0',
-    fontSize: '0.875rem',
-    color: '#1e40af'
+    margin: '1rem auto',
+    maxWidth: '38rem',
+    display: 'flex',
+    gap: '1rem',
+    alignItems: 'end'
+  },
+  input: {
+    flex: 1,
+    border: '1px solid #d1d5db',
+    borderRadius: '0.5rem',
+    padding: '0.5rem 0.75rem',
+    fontSize: '0.875rem'
+  },
+  resultCard: {
+    background: 'white',
+    borderRadius: '1.5rem',
+    padding: '2rem',
+    boxShadow: '0 10px 25px rgba(0, 0, 0, 0.1)',
+    border: '1px solid rgba(229, 231, 235, 0.5)',
+    margin: '2rem 0'
   },
   footer: {
     textAlign: 'center',
@@ -250,30 +238,29 @@ const WattsMyBillApp = () => {
   const [isAnalyzing, setIsAnalyzing] = useState(false);
   const [results, setResults] = useState(null);
   const [error, setError] = useState(null);
-  const [supportedCompanies, setSupportedCompanies] = useState([]);
-  const [companyDetected, setCompanyDetected] = useState(null);
+  const [switchSuccess, setSwitchSuccess] = useState(null);
+  const [locationInfo, setLocationInfo] = useState({ state: 'QLD', postcode: '' });
+  const [agentsAvailable, setAgentsAvailable] = useState(false);
   const fileInputRef = useRef(null);
 
   const steps = [
     { id: 'upload', label: 'Upload Bill', icon: '📤' },
-    { id: 'parsing', label: 'Parsing Bill', icon: '🔍' },
-    { id: 'market', label: 'Market Scan', icon: '📊' },
-    { id: 'rebates', label: 'Rebate Scan', icon: '💰' },
-    { id: 'summary', label: 'Savings Summary', icon: '✅' }
+    { id: 'parsing', label: 'AI Analysis', icon: '🔍' },
+    { id: 'market', label: 'Plan Search', icon: '📊' },
+    { id: 'savings', label: 'Calculate Savings', icon: '💰' },
+    { id: 'complete', label: 'Ready to Switch', icon: '✅' }
   ];
 
-  // Fetch supported companies on component mount
   useEffect(() => {
-    const fetchSupportedCompanies = async () => {
+    const checkHealth = async () => {
       try {
-        const response = await axios.get(`${API_BASE_URL}/supported-companies`);
-        setSupportedCompanies(response.data.supported_companies);
+        const response = await axios.get(`${API_BASE_URL}/../health`);
+        setAgentsAvailable(response.data.agents_available);
       } catch (err) {
-        console.warn('Could not fetch supported companies');
+        console.warn('Could not check agent status');
       }
     };
-    
-    fetchSupportedCompanies();
+    checkHealth();
   }, []);
 
   const handleFileUpload = async (event) => {
@@ -281,6 +268,7 @@ const WattsMyBillApp = () => {
     if (uploadedFile) {
       setFile(uploadedFile);
       setError(null);
+      setSwitchSuccess(null);
       await startAnalysis(uploadedFile);
     }
   };
@@ -288,12 +276,15 @@ const WattsMyBillApp = () => {
   const startAnalysis = async (uploadedFile) => {
     setIsAnalyzing(true);
     setCurrentStep(0);
-    setCompanyDetected(null);
+    setResults(null);
     
     try {
       const formData = new FormData();
       formData.append('file', uploadedFile);
-      formData.append('state', 'QLD');
+      formData.append('state', locationInfo.state);
+      if (locationInfo.postcode) {
+        formData.append('postcode', locationInfo.postcode);
+      }
 
       const response = await axios.post(`${API_BASE_URL}/upload-bill`, formData, {
         headers: { 'Content-Type': 'multipart/form-data' },
@@ -306,20 +297,17 @@ const WattsMyBillApp = () => {
       setIsAnalyzing(false);
       
       if (err.response && err.response.status === 400) {
-        // Handle validation error
         const errorData = err.response.data.detail;
         if (typeof errorData === 'object') {
           setError({
             message: errorData.error,
-            details: errorData.validation_details,
-            supportedCompanies: errorData.supported_companies,
-            tips: errorData.tips
+            tips: errorData.tips || []
           });
         } else {
           setError({ message: errorData });
         }
       } else {
-        setError({ message: 'Failed to start analysis. Make sure the backend is running.' });
+        setError({ message: 'Failed to start analysis. Please check your connection and try again.' });
       }
     }
   };
@@ -328,11 +316,7 @@ const WattsMyBillApp = () => {
     const checkProgress = async () => {
       try {
         const response = await axios.get(`${API_BASE_URL}/analysis/${id}/status`);
-        const { status, progress, company_detected } = response.data;
-        
-        if (company_detected) {
-          setCompanyDetected(company_detected);
-        }
+        const { status, progress } = response.data;
         
         setCurrentStep(Math.floor((progress / 100) * steps.length));
         
@@ -342,18 +326,61 @@ const WattsMyBillApp = () => {
           setIsAnalyzing(false);
           setCurrentStep(steps.length);
         } else if (status === 'failed') {
-          setError({ message: 'Analysis failed' });
+          setError({ message: 'Analysis failed - please try uploading your bill again' });
           setIsAnalyzing(false);
         } else {
           setTimeout(checkProgress, 2000);
         }
       } catch (pollError) {
-        setError({ message: 'Lost connection to backend' });
+        setError({ message: 'Lost connection to analysis service' });
         setIsAnalyzing(false);
       }
     };
     
     checkProgress();
+  };
+
+  const handlePlanSwitch = async (plan) => {
+    try {
+      setSwitchSuccess(null);
+      
+      let postcode = locationInfo.postcode;
+      if (!postcode && results?.market_research?.research_parameters?.postcode) {
+        postcode = results.market_research.research_parameters.postcode;
+      }
+      
+      const response = await axios.post(`${API_BASE_URL}/generate-switch-url`, {
+        plan_id: plan.plan_id,
+        postcode: postcode,
+        retailer: plan.retailer,
+        plan_name: plan.plan_name
+      });
+      
+      setSwitchSuccess({
+        retailer: plan.retailer,
+        plan_name: plan.plan_name,
+        savings: plan.annual_savings,
+        postcode: response.data.postcode
+      });
+      
+      window.open(response.data.switch_url, '_blank');
+      
+    } catch (err) {
+      console.error('Failed to generate switch URL:', err);
+      
+      const fallbackPostcode = results?.market_research?.research_parameters?.postcode || locationInfo.postcode || '2000';
+      const fallbackUrl = plan.energy_made_easy_url || 
+        `https://www.energymadeeasy.gov.au/plan?id=${plan.plan_id}&postcode=${fallbackPostcode}`;
+      
+      setSwitchSuccess({
+        retailer: plan.retailer,
+        plan_name: plan.plan_name,
+        savings: plan.annual_savings,
+        postcode: fallbackPostcode
+      });
+      
+      window.open(fallbackUrl, '_blank');
+    }
   };
 
   const resetAnalysis = () => {
@@ -362,7 +389,7 @@ const WattsMyBillApp = () => {
     setIsAnalyzing(false);
     setResults(null);
     setError(null);
-    setCompanyDetected(null);
+    setSwitchSuccess(null);
   };
 
   const formatCurrency = (amount) => {
@@ -374,39 +401,144 @@ const WattsMyBillApp = () => {
     }).format(amount);
   };
 
-  const getBillingPeriodText = (results) => {
-    const billingContext = results?.billing_context;
-    if (billingContext?.period_type === 'quarterly') {
-      return {
-        period: 'Quarterly',
-        description: billingContext.period_description,
-        multiplier: billingContext.annual_multiplier || 4
-      };
+  const getConfidenceStyle = (confidence) => {
+    switch (confidence) {
+      case 'high': return styles.highConfidence;
+      case 'medium': return styles.mediumConfidence;
+      case 'low': return styles.lowConfidence;
+      default: return styles.mediumConfidence;
     }
-    return {
-      period: 'Annual',
-      description: 'Based on annual estimates',
-      multiplier: 1
-    };
   };
+
+  const renderPlanCard = (plan, index, isBest = false) => (
+    <div 
+      key={plan.plan_id || index}
+      style={{
+        ...styles.planCard,
+        ...(isBest ? styles.planCardBest : {})
+      }}
+    >
+      {isBest && <div style={styles.bestPlanBadge}>💡 Best Option</div>}
+      
+      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', marginBottom: '1rem' }}>
+        <div>
+          <h4 style={{ margin: '0 0 0.25rem 0', fontSize: '1.125rem', fontWeight: '600', color: '#111827' }}>
+            {plan.retailer}
+          </h4>
+          <p style={{ margin: '0', color: '#6b7280', fontSize: '0.875rem' }}>
+            {plan.plan_name}
+          </p>
+        </div>
+        {plan.switch_confidence && (
+          <span style={{...styles.confidenceBadge, ...getConfidenceStyle(plan.switch_confidence)}}>
+            {plan.switch_confidence} confidence
+          </span>
+        )}
+      </div>
+      
+      <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '1rem', marginBottom: '1rem' }}>
+        <div>
+          <span style={{ fontSize: '0.875rem', color: '#6b7280' }}>Annual Cost</span>
+          <div style={{ fontSize: '1.25rem', fontWeight: '600', color: '#111827' }}>
+            {formatCurrency(plan.estimated_annual_cost)}
+          </div>
+        </div>
+        <div>
+          <span style={{ fontSize: '0.875rem', color: '#6b7280' }}>Annual Savings</span>
+          <div style={{ fontSize: '1.25rem', fontWeight: '600', color: plan.annual_savings > 0 ? '#16a34a' : '#6b7280' }}>
+            {plan.annual_savings > 0 ? `${formatCurrency(plan.annual_savings)}` : 'No savings'}
+          </div>
+        </div>
+      </div>
+      
+      <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr 1fr', gap: '0.75rem', marginBottom: '1rem', fontSize: '0.875rem' }}>
+        <div>
+          <span style={{ color: '#6b7280' }}>Usage Rate</span>
+          <div style={{ fontWeight: '500' }}>${plan.usage_rate}/kWh</div>
+        </div>
+        <div>
+          <span style={{ color: '#6b7280' }}>Daily Supply</span>
+          <div style={{ fontWeight: '500' }}>${plan.supply_charge_daily}/day</div>
+        </div>
+        <div>
+          <span style={{ color: '#6b7280' }}>Solar Rate</span>
+          <div style={{ fontWeight: '500' }}>${plan.solar_feed_in_tariff}/kWh</div>
+        </div>
+      </div>
+      
+      {plan.key_features && plan.key_features.length > 0 && (
+        <div style={{ marginBottom: '1rem' }}>
+          <div style={{ fontSize: '0.875rem', color: '#6b7280', marginBottom: '0.5rem' }}>Key Features:</div>
+          <div style={{ display: 'flex', flexWrap: 'wrap', gap: '0.25rem' }}>
+            {plan.key_features.slice(0, 3).map((feature, idx) => (
+              <span key={idx} style={{
+                background: '#f3f4f6',
+                color: '#374151',
+                padding: '0.25rem 0.5rem',
+                borderRadius: '0.25rem',
+                fontSize: '0.75rem'
+              }}>
+                {feature}
+              </span>
+            ))}
+          </div>
+        </div>
+      )}
+      
+      <button
+        style={styles.switchButton}
+        onClick={() => handlePlanSwitch(plan)}
+        onMouseEnter={(e) => {
+          e.target.style.transform = 'translateY(-1px)';
+          e.target.style.boxShadow = '0 4px 12px rgba(22, 163, 74, 0.3)';
+        }}
+        onMouseLeave={(e) => {
+          e.target.style.transform = 'translateY(0)';
+          e.target.style.boxShadow = 'none';
+        }}
+      >
+        🔄 Switch to This Plan
+      </button>
+      
+      <div style={{ 
+        fontSize: '0.75rem', 
+        color: '#9ca3af', 
+        textAlign: 'center', 
+        marginTop: '0.5rem' 
+      }}>
+        Opens Energy Made Easy for postcode {plan.postcode_used || results?.market_research?.research_parameters?.postcode || '2000'}
+      </div>
+    </div>
+  );
 
   return (
     <div style={styles.container}>
-      {/* Header */}
       <div style={styles.header}>
         <div style={styles.headerContent}>
           <div style={styles.logo}>
             <div style={styles.logoIcon}>⚡</div>
             <div>
               <h1 style={styles.title}>WattsMyBill</h1>
-              <p style={styles.subtitle}>AI Energy Analysis</p>
+              <p style={styles.subtitle}>
+                {agentsAvailable ? 'AI-Powered Energy Analysis' : 'Smart Energy Analysis'}
+              </p>
             </div>
           </div>
           <a 
             href="https://github.com/avipaul6/wattsmybill-multiagent" 
             target="_blank" 
             rel="noopener noreferrer"
-            style={styles.githubLink}
+            style={{
+              display: 'flex',
+              alignItems: 'center',
+              gap: '0.5rem',
+              color: '#6b7280',
+              textDecoration: 'none',
+              fontSize: '0.875rem',
+              padding: '0.5rem 1rem',
+              borderRadius: '0.5rem',
+              transition: 'all 0.3s ease'
+            }}
             onMouseEnter={(e) => {
               e.target.style.backgroundColor = '#f3f4f6';
               e.target.style.color = '#111827';
@@ -416,120 +548,103 @@ const WattsMyBillApp = () => {
               e.target.style.color = '#6b7280';
             }}
           >
-            <svg width="20" height="20" viewBox="0 0 24 24" fill="currentColor">
-              <path d="M12 0c-6.626 0-12 5.373-12 12 0 5.302 3.438 9.8 8.207 11.387.599.111.793-.261.793-.577v-2.234c-3.338.726-4.033-1.416-4.033-1.416-.546-1.387-1.333-1.756-1.333-1.756-1.089-.745.083-.729.083-.729 1.205.084 1.839 1.237 1.839 1.237 1.07 1.834 2.807 1.304 3.492.997.107-.775.418-1.305.762-1.604-2.665-.305-5.467-1.334-5.467-5.931 0-1.311.469-2.381 1.236-3.221-.124-.303-.535-1.524.117-3.176 0 0 1.008-.322 3.301 1.23.957-.266 1.983-.399 3.003-.404 1.02.005 2.047.138 3.006.404 2.291-1.552 3.297-1.23 3.297-1.23.653 1.653.242 2.874.118 3.176.77.84 1.235 1.911 1.235 3.221 0 4.609-2.807 5.624-5.479 5.921.43.372.823 1.102.823 2.222v3.293c0 .319.192.694.801.576 4.765-1.589 8.199-6.086 8.199-11.386 0-6.627-5.373-12-12-12z"/>
-            </svg>
             <span>Source Code</span>
           </a>
         </div>
       </div>
 
       <div style={styles.main}>
-        {/* Hero Section */}
         <div style={{textAlign: 'center', marginBottom: '4rem'}}>
           <h2 style={styles.heroTitle}>
             What's Really Going On<br />
             <span style={styles.heroGradientText}>With Your Energy Bill?</span>
           </h2>
           <p style={styles.heroSubtitle}>
-            Let real AI agents analyze your Australian energy bill and save you money.
+            {agentsAvailable 
+              ? "AI agents analyze your bill and find better energy plans with real switching links."
+              : "Smart analysis to find better energy plans and save you money."
+            }
           </p>
 
-          {/* Company Detection */}
-          {companyDetected && (
+          {!results && (
+            <div style={styles.locationInput}>
+              <div style={{flex: 1}}>
+                <label style={{fontSize: '0.875rem', color: '#6b7280', display: 'block', marginBottom: '0.25rem'}}>
+                  Your State (if not detected from bill)
+                </label>
+                <select 
+                  style={styles.input}
+                  value={locationInfo.state}
+                  onChange={(e) => setLocationInfo(prev => ({...prev, state: e.target.value}))}
+                >
+                  <option value="NSW">New South Wales</option>
+                  <option value="QLD">Queensland</option>
+                  <option value="VIC">Victoria</option>
+                  <option value="SA">South Australia</option>
+                  <option value="WA">Western Australia</option>
+                  <option value="TAS">Tasmania</option>
+                  <option value="ACT">ACT</option>
+                  <option value="NT">Northern Territory</option>
+                </select>
+              </div>
+              <div style={{flex: 1}}>
+                <label style={{fontSize: '0.875rem', color: '#6b7280', display: 'block', marginBottom: '0.25rem'}}>
+                  Postcode (if not on bill)
+                </label>
+                <input 
+                  style={styles.input}
+                  type="text"
+                  placeholder="e.g. 4000"
+                  value={locationInfo.postcode}
+                  onChange={(e) => setLocationInfo(prev => ({...prev, postcode: e.target.value}))}
+                />
+              </div>
+            </div>
+          )}
+
+          {results?.market_research?.research_parameters?.postcode && (
             <div style={{
-              ...styles.billingContext,
               background: '#f0fdf4',
               border: '1px solid #16a34a',
               color: '#166534',
-              marginBottom: '1rem'
+              padding: '0.75rem',
+              borderRadius: '0.75rem',
+              marginBottom: '1rem',
+              fontSize: '0.875rem',
+              textAlign: 'center'
             }}>
-              ✅ Detected: {companyDetected} energy bill
+              📍 Postcode {results.market_research.research_parameters.postcode} extracted from your bill
+            </div>
+          )}
+
+          {switchSuccess && (
+            <div style={styles.successMessage}>
+              <strong>🎉 Great choice!</strong> You're switching to {switchSuccess.retailer} {switchSuccess.plan_name}.
+              <br />
+              <span style={{fontSize: '0.875rem'}}>
+                Potential annual savings: {formatCurrency(switchSuccess.savings)} 
+                • Using postcode: {switchSuccess.postcode}
+                • Energy Made Easy will guide you through the official switching process.
+              </span>
             </div>
           )}
           
-          {/* Low confidence warning */}
-          {file && !companyDetected && !error && (
-            <div style={{
-              ...styles.billingContext,
-              background: '#fffbeb',
-              border: '1px solid #f59e0b',
-              color: '#92400e',
-              marginBottom: '1rem'
-            }}>
-              ⚠️ Document uploaded - proceeding with analysis (energy company not clearly detected)
-            </div>
-          )}
-
-          {/* Error Display */}
           {error && (
             <div style={styles.error}>
               <strong>❌ {error.message}</strong>
-              {error.details && (
-                <div style={{marginTop: '1rem'}}>
-                  <p><strong>Analysis:</strong></p>
-                  <ul style={{textAlign: 'left', marginLeft: '1rem', fontSize: '0.875rem'}}>
-                    <li>Energy terms found: {error.details.energy_indicators_found || 0}</li>
-                    <li>Australian energy terms: {error.details.australian_energy_terms_found || 0}</li>
-                    <li>Energy company recognized: {error.details.recognized_energy_company ? 'Yes' : 'No'}</li>
-                    {error.details.non_energy_indicators_found > 0 && (
-                      <li style={{color: '#dc2626', fontWeight: '600'}}>
-                        Non-energy business indicators: {error.details.non_energy_indicators_found}
-                      </li>
-                    )}
-                    {error.details.reason && (
-                      <li style={{color: '#dc2626', fontWeight: '600'}}>
-                        Detected as: {error.details.reason}
-                      </li>
-                    )}
-                  </ul>
-                </div>
-              )}
-              {error.tips && (
-                <div style={{marginTop: '1rem'}}>
-                  <p><strong>💡 Tips:</strong></p>
-                  <ul style={{textAlign: 'left', marginLeft: '1rem', fontSize: '0.875rem'}}>
-                    {error.tips.map((tip, index) => (
-                      <li key={index}>{tip}</li>
+              {error.tips && error.tips.length > 0 && (
+                <div style={{marginTop: '0.5rem'}}>
+                  <strong>Tips:</strong>
+                  <ul style={{margin: '0.5rem 0', paddingLeft: '1.5rem', textAlign: 'left'}}>
+                    {error.tips.map((tip, idx) => (
+                      <li key={idx} style={{fontSize: '0.875rem'}}>{tip}</li>
                     ))}
                   </ul>
-                </div>
-              )}
-              {error.supportedCompanies && error.supportedCompanies.length > 0 && (
-                <div style={{marginTop: '1rem'}}>
-                  <p><strong>📋 Supported Companies (sample):</strong></p>
-                  <div style={{
-                    display: 'flex',
-                    flexWrap: 'wrap',
-                    gap: '0.25rem',
-                    marginTop: '0.5rem'
-                  }}>
-                    {error.supportedCompanies.slice(0, 8).map((company, index) => (
-                      <span key={index} style={{
-                        background: '#fef2f2',
-                        color: '#991b1b',
-                        padding: '0.25rem 0.5rem',
-                        borderRadius: '0.5rem',
-                        fontSize: '0.75rem',
-                        fontWeight: '500'
-                      }}>
-                        {company}
-                      </span>
-                    ))}
-                    <span style={{
-                      color: '#6b7280',
-                      fontSize: '0.75rem',
-                      padding: '0.25rem'
-                    }}>
-                      +{supportedCompanies.length - 8} more...
-                    </span>
-                  </div>
                 </div>
               )}
             </div>
           )}
 
-          {/* Upload Area */}
           <div 
             style={{
               ...styles.uploadArea,
@@ -537,7 +652,7 @@ const WattsMyBillApp = () => {
             }}
             onClick={() => fileInputRef.current?.click()}
             onMouseEnter={(e) => {
-              if (!file) {
+              if (!file && !isAnalyzing) {
                 e.target.style.borderColor = '#3b82f6';
                 e.target.style.background = '#f8faff';
                 e.target.style.transform = 'translateY(-2px)';
@@ -559,80 +674,72 @@ const WattsMyBillApp = () => {
             />
             
             <div style={styles.uploadIcon}>
-              {file ? '✅' : '📤'}
+              {file ? '✅' : isAnalyzing ? '⏳' : '📤'}
             </div>
             
             <h3 style={{fontSize: '1.25rem', fontWeight: '600', marginBottom: '0.5rem'}}>
-              {file ? file.name : 'Upload your Australian energy bill'}
+              {file ? file.name : isAnalyzing ? 'Analyzing...' : 'Upload your Australian energy bill'}
             </h3>
             <p style={{color: '#6b7280', margin: 0}}>
-              {file ? 'Ready to analyze!' : 'PDF or image files supported'}
+              {file ? (isAnalyzing ? 'Analysis in progress...' : 'Ready for analysis!') : 'PDF or image files supported'}
             </p>
           </div>
-
-          {/* Supported Companies */}
-          {supportedCompanies.length > 0 && (
-            <div style={styles.supportedCompanies}>
-              <h4 style={{margin: '0 0 1rem 0', fontSize: '1rem', fontWeight: '600'}}>
-                📋 Supported Energy Companies
-              </h4>
-              <div style={{
-                display: 'flex',
-                flexWrap: 'wrap',
-                gap: '0.5rem',
-                justifyContent: 'center',
-                fontSize: '0.875rem'
-              }}>
-                {supportedCompanies.slice(0, 10).map((company, index) => (
-                  <span key={index} style={{
-                    background: '#e0f2fe',
-                    color: '#0369a1',
-                    padding: '0.25rem 0.75rem',
-                    borderRadius: '1rem',
-                    fontWeight: '500'
-                  }}>
-                    {company}
-                  </span>
-                ))}
-                {supportedCompanies.length > 10 && (
-                  <span style={{
-                    background: '#f1f5f9',
-                    color: '#475569',
-                    padding: '0.25rem 0.75rem',
-                    borderRadius: '1rem',
-                    fontWeight: '500'
-                  }}>
-                    +{supportedCompanies.length - 10} more
-                  </span>
-                )}
-              </div>
-            </div>
-          )}
         </div>
 
-        {/* Progress Steps */}
         {(isAnalyzing || results) && (
           <div style={styles.progressContainer}>
-            <h3 style={{textAlign: 'center', marginBottom: '2rem'}}>Analysis Progress</h3>
-            <div style={styles.progressSteps}>
+            <h3 style={{textAlign: 'center', marginBottom: '2rem'}}>
+              {agentsAvailable ? 'AI Agent Analysis Progress' : 'Analysis Progress'}
+            </h3>
+            <div style={{
+              display: 'flex',
+              alignItems: 'center',
+              justifyContent: 'space-between',
+              flexWrap: 'wrap',
+              gap: '1rem'
+            }}>
               {steps.map((step, index) => {
                 const isCompleted = currentStep > index;
                 const isCurrent = currentStep === index && isAnalyzing;
                 
                 return (
-                  <div key={step.id} style={styles.progressStep}>
+                  <div key={step.id} style={{
+                    flex: 1,
+                    minWidth: '120px',
+                    display: 'flex',
+                    flexDirection: 'column',
+                    alignItems: 'center'
+                  }}>
                     <div style={{
-                      ...styles.progressIcon,
-                      ...(isCompleted ? styles.progressIconCompleted : 
-                          isCurrent ? styles.progressIconCurrent : 
-                          styles.progressIconPending)
+                      width: '3rem',
+                      height: '3rem',
+                      borderRadius: '50%',
+                      display: 'flex',
+                      alignItems: 'center',
+                      justifyContent: 'center',
+                      marginBottom: '0.75rem',
+                      fontSize: '1.5rem',
+                      transition: 'all 0.5s ease',
+                      ...(isCompleted ? {
+                        background: '#16a34a',
+                        color: 'white',
+                        transform: 'scale(1.1)'
+                      } : isCurrent ? {
+                        background: '#3b82f6',
+                        color: 'white',
+                        transform: 'scale(1.1)'
+                      } : {
+                        background: '#e5e7eb',
+                        color: '#9ca3af'
+                      })
                     }}>
                       {isCompleted ? '✅' : step.icon}
                     </div>
                     <span style={{
                       fontSize: '0.875rem',
                       fontWeight: '500',
-                      color: isCompleted || isCurrent ? '#111827' : '#9ca3af'
+                      color: isCompleted || isCurrent ? '#111827' : '#9ca3af',
+                      textAlign: 'center'
                     }}>
                       {step.label}
                     </span>
@@ -643,361 +750,101 @@ const WattsMyBillApp = () => {
           </div>
         )}
 
-        {/* Results Cards */}
         {results && (
           <>
-            {/* Billing Context Information */}
-            {results.billing_context && (
-              <div style={styles.billingContext}>
-                ℹ️ <strong>Billing Period:</strong> {getBillingPeriodText(results).description}
+            {results.market_research?.top_switching_plans && results.market_research.top_switching_plans.length > 0 && (
+              <div style={{marginBottom: '4rem'}}>
+                <h3 style={{textAlign: 'center', marginBottom: '1.5rem', fontSize: '2rem', fontWeight: '700'}}>
+                  🔄 Top 3 Plans to Switch To
+                </h3>
+                <div style={{
+                  display: 'grid',
+                  gridTemplateColumns: 'repeat(auto-fit, minmax(350px, 1fr))',
+                  gap: '1.5rem'
+                }}>
+                  {results.market_research.top_switching_plans.map((plan, index) => 
+                    renderPlanCard(plan, index, index === 0)
+                  )}
+                </div>
               </div>
             )}
 
-            <div style={styles.resultsGrid}>
-              {/* Bill Analysis */}
-              <div style={styles.resultCard}>
-                <div style={styles.cardHeader}>
-                  <div style={{...styles.cardIcon, background: '#dbeafe'}}>📊</div>
-                  <h3 style={styles.cardTitle}>Bill Analysis</h3>
-                </div>
-                
-                {(() => {
-                  const billing = getBillingPeriodText(results);
-                  const billData = results.bill_analysis?.cost_breakdown || {};
-                  const usageData = results.bill_analysis?.usage_profile || {};
-                  
-                  const quarterlyCost = billData.quarterly_cost || billData.total_cost || 712.5;
-                  const quarterlyUsage = usageData.quarterly_kwh || usageData.total_kwh || 2060;
-                  const efficiencyScore = results.bill_analysis?.efficiency_score || 72;
-                  
-                  return (
-                    <>
-                      <div style={{display: 'flex', justifyContent: 'space-between', marginBottom: '1rem'}}>
-                        <span>{billing.period} Cost</span>
-                        <strong>{formatCurrency(quarterlyCost)}</strong>
-                      </div>
-                      <div style={{display: 'flex', justifyContent: 'space-between', marginBottom: '1rem'}}>
-                        <span>Annual Cost</span>
-                        <strong>{formatCurrency(quarterlyCost * billing.multiplier)}</strong>
-                      </div>
-                      <div style={{display: 'flex', justifyContent: 'space-between', marginBottom: '1rem'}}>
-                        <span>{billing.period} Usage</span>
-                        <strong>{quarterlyUsage.toLocaleString()} kWh</strong>
-                      </div>
-                      <div style={{display: 'flex', justifyContent: 'space-between', marginBottom: '1rem'}}>
-                        <span>Daily Average</span>
-                        <strong>{usageData.daily_average || (quarterlyUsage / 90).toFixed(1)} kWh</strong>
-                      </div>
-                      <div style={{display: 'flex', justifyContent: 'space-between', marginBottom: '1rem'}}>
-                        <span>Usage Category</span>
-                        <strong style={{
-                          color: usageData.usage_category === 'low' ? '#16a34a' : 
-                                usageData.usage_category === 'high' ? '#dc2626' : '#6b7280'
-                        }}>
-                          {(usageData.usage_category || 'medium').charAt(0).toUpperCase() + (usageData.usage_category || 'medium').slice(1)}
-                        </strong>
-                      </div>
-                      <div style={{display: 'flex', justifyContent: 'space-between'}}>
-                        <span>Efficiency Score</span>
-                        <strong style={{
-                          color: efficiencyScore >= 80 ? '#16a34a' : 
-                                efficiencyScore >= 60 ? '#f59e0b' : '#dc2626'
-                        }}>
-                          {efficiencyScore}/100
-                        </strong>
-                      </div>
-                      
-                      {/* Efficiency Score Progress Bar */}
-                      <div style={{marginTop: '1rem'}}>
-                        <div style={{
-                          width: '100%',
-                          height: '8px',
-                          backgroundColor: '#e5e7eb',
-                          borderRadius: '4px',
-                          overflow: 'hidden'
-                        }}>
-                          <div style={{
-                            width: `${efficiencyScore}%`,
-                            height: '100%',
-                            backgroundColor: efficiencyScore >= 80 ? '#16a34a' : 
-                                           efficiencyScore >= 60 ? '#f59e0b' : '#dc2626',
-                            transition: 'width 0.5s ease'
-                          }}></div>
-                        </div>
-                      </div>
-                    </>
-                  );
-                })()}
-              </div>
-
-              {/* Solar Analysis (if applicable) */}
-              {results.bill_analysis?.solar_analysis?.has_solar && (
+            <div style={{
+              display: 'grid',
+              gridTemplateColumns: 'repeat(auto-fit, minmax(300px, 1fr))',
+              gap: '2rem',
+              margin: '4rem 0'
+            }}>
+              
+              {results.bill_analysis?.bill_data && (
                 <div style={styles.resultCard}>
-                  <div style={styles.cardHeader}>
-                    <div style={{...styles.cardIcon, background: '#fef3c7'}}>☀️</div>
-                    <h3 style={styles.cardTitle}>Solar System Analysis</h3>
+                  <div style={{display: 'flex', alignItems: 'center', gap: '0.75rem', marginBottom: '1.5rem'}}>
+                    <div style={{
+                      width: '2.5rem',
+                      height: '2.5rem',
+                      background: '#dbeafe',
+                      borderRadius: '0.75rem',
+                      display: 'flex',
+                      alignItems: 'center',
+                      justifyContent: 'center',
+                      fontSize: '1.25rem'
+                    }}>📄</div>
+                    <h3 style={{fontSize: '1.25rem', fontWeight: '600', color: '#111827', margin: 0}}>
+                      Your Energy Bill
+                    </h3>
                   </div>
                   
                   {(() => {
-                    const solar = results.bill_analysis.solar_analysis;
+                    const billData = results.bill_analysis.bill_data;
+                    const annualUsage = billData.usage_kwh * (365 / (billData.billing_days || 90));
+                    const annualCost = billData.total_amount * (365 / (billData.billing_days || 90));
                     
                     return (
                       <>
                         <div style={{display: 'flex', justifyContent: 'space-between', marginBottom: '1rem'}}>
-                          <span>Solar Export</span>
-                          <strong>{solar.solar_export_kwh || 0} kWh</strong>
+                          <span>Current Retailer</span>
+                          <strong>{billData.retailer || 'Unknown'}</strong>
                         </div>
                         <div style={{display: 'flex', justifyContent: 'space-between', marginBottom: '1rem'}}>
-                          <span>Export Ratio</span>
-                          <strong>{solar.export_ratio_percent || 0}%</strong>
+                          <span>Annual Usage</span>
+                          <strong>{Math.round(annualUsage).toLocaleString()} kWh</strong>
                         </div>
                         <div style={{display: 'flex', justifyContent: 'space-between', marginBottom: '1rem'}}>
-                          <span>Solar Credit</span>
-                          <strong style={{color: '#16a34a'}}>
-                            {formatCurrency(solar.solar_credit_amount || 0)}
-                          </strong>
+                          <span>Annual Cost</span>
+                          <strong>{formatCurrency(annualCost)}</strong>
                         </div>
                         <div style={{display: 'flex', justifyContent: 'space-between', marginBottom: '1rem'}}>
-                          <span>Performance</span>
-                          <strong style={{
-                            color: solar.performance_rating === 'excellent' ? '#16a34a' : 
-                                  solar.performance_rating === 'good' ? '#f59e0b' : '#6b7280'
-                          }}>
-                            {(solar.performance_rating || 'good').charAt(0).toUpperCase() + (solar.performance_rating || 'good').slice(1)}
-                          </strong>
+                          <span>State</span>
+                          <strong>{billData.state || 'Unknown'}</strong>
                         </div>
-                        
-                        {solar.battery_recommendation && (
-                          <div style={{
-                            background: '#f0f9ff',
-                            border: '1px solid #3b82f6',
-                            borderRadius: '0.5rem',
-                            padding: '0.75rem',
-                            fontSize: '0.875rem',
-                            color: '#1e40af'
-                          }}>
-                            💡 <strong>Battery Recommendation:</strong> Your high solar export suggests a battery system could maximize your savings.
+                        {billData.has_solar && (
+                          <div style={{display: 'flex', justifyContent: 'space-between', marginBottom: '1rem'}}>
+                            <span>Solar System</span>
+                            <strong style={{color: '#16a34a'}}>✅ Installed</strong>
                           </div>
                         )}
-                        
-                        <div style={{marginTop: '1rem', fontSize: '0.875rem', color: '#6b7280'}}>
-                          {solar.performance_note || 'Your solar system is contributing to your energy savings.'}
-                        </div>
                       </>
                     );
                   })()}
                 </div>
               )}
 
-              {/* Better Plan */}
-              <div style={styles.resultCard}>
-                <div style={styles.cardHeader}>
-                  <div style={{...styles.cardIcon, background: '#dcfce7'}}>📈</div>
-                  <h3 style={styles.cardTitle}>Better Plan Available</h3>
-                </div>
-                
-                {(() => {
-                  const billing = getBillingPeriodText(results);
-                  const bestPlan = results.market_research?.best_plan || {};
-                  const quarterlySavings = bestPlan.quarterly_savings || bestPlan.annual_savings / 4 || 105;
-                  
-                  return (
-                    <>
-                      <h4 style={{margin: '0 0 0.5rem 0'}}>
-                        {bestPlan.retailer || 'Alinta Energy'}
-                      </h4>
-                      <p style={{color: '#6b7280', margin: '0 0 1rem 0'}}>
-                        {bestPlan.plan_name || 'Home Deal Plus'}
-                      </p>
-                      <div style={{display: 'flex', justifyContent: 'space-between', marginBottom: '1rem'}}>
-                        <span>{billing.period} Savings</span>
-                        <strong style={{color: '#16a34a'}}>
-                          {formatCurrency(quarterlySavings)}
-                        </strong>
-                      </div>
-                      <div style={{display: 'flex', justifyContent: 'space-between', marginBottom: '1rem'}}>
-                        <span>Annual Savings</span>
-                        <strong style={{color: '#16a34a'}}>
-                          {formatCurrency(quarterlySavings * billing.multiplier)}
-                        </strong>
-                      </div>
-                      
-                      {bestPlan.why_best && (
-                        <div style={{
-                          background: '#f0fdf4',
-                          border: '1px solid #16a34a',
-                          borderRadius: '0.5rem',
-                          padding: '0.75rem',
-                          fontSize: '0.875rem',
-                          color: '#166534',
-                          marginBottom: '1rem'
-                        }}>
-                          ✅ {bestPlan.why_best}
-                        </div>
-                      )}
-                      
-                      <button style={{...styles.button, background: 'linear-gradient(135deg, #16a34a, #15803d)'}}>
-                        Switch Plan →
-                      </button>
-                    </>
-                  );
-                })()}
-              </div>
-
-              {/* Usage Recommendations */}
-              {results.bill_analysis?.recommendations && results.bill_analysis.recommendations.length > 0 && (
-                <div style={styles.resultCard}>
-                  <div style={styles.cardHeader}>
-                    <div style={{...styles.cardIcon, background: '#e0f2fe'}}>💡</div>
-                    <h3 style={styles.cardTitle}>Energy Saving Tips</h3>
-                  </div>
-                  
-                  <div style={{fontSize: '0.875rem'}}>
-                    {results.bill_analysis.recommendations.slice(0, 3).map((rec, index) => (
-                      <div key={index} style={{
-                        padding: '0.75rem',
-                        background: '#f8fafc',
-                        borderRadius: '0.5rem',
-                        marginBottom: '0.75rem',
-                        borderLeft: '3px solid #3b82f6'
-                      }}>
-                        {rec}
-                      </div>
-                    ))}
-                    
-                    {results.bill_analysis.recommendations.length > 3 && (
-                      <div style={{
-                        textAlign: 'center',
-                        color: '#6b7280',
-                        fontSize: '0.75rem',
-                        marginTop: '0.5rem'
-                      }}>
-                        +{results.bill_analysis.recommendations.length - 3} more recommendations available
-                      </div>
-                    )}
-                  </div>
-                </div>
-              )}
-
-              {/* Total Savings Potential */}
-              <div style={styles.resultCard}>
-                <div style={styles.cardHeader}>
-                  <div style={{...styles.cardIcon, background: '#f3e8ff'}}>💎</div>
-                  <h3 style={styles.cardTitle}>Total Savings Potential</h3>
-                </div>
-                
-                {(() => {
-                  const billing = getBillingPeriodText(results);
-                  const totalSavings = results.total_savings || 248;
-                  const marketSavings = results.market_research?.savings_analysis?.max_annual_savings || 0;
-                  const rebateSavings = results.rebate_analysis?.total_rebate_value || 0;
-                  
-                  return (
-                    <div style={{textAlign: 'center'}}>
-                      <div style={{fontSize: '2rem', fontWeight: '700', color: '#8b5cf6', marginBottom: '0.5rem'}}>
-                        {formatCurrency(totalSavings)} / {billing.period.toLowerCase()}
-                      </div>
-                      <div style={{fontSize: '1.25rem', fontWeight: '600', color: '#6b7280', marginBottom: '1rem'}}>
-                        {formatCurrency(totalSavings * billing.multiplier)} / year
-                      </div>
-                      
-                      {/* Savings Breakdown */}
-                      <div style={{fontSize: '0.875rem', textAlign: 'left'}}>
-                        {marketSavings > 0 && (
-                          <div style={{display: 'flex', justifyContent: 'space-between', marginBottom: '0.5rem'}}>
-                            <span>Plan switching:</span>
-                            <span style={{color: '#16a34a'}}>{formatCurrency(marketSavings)}/year</span>
-                          </div>
-                        )}
-                        {rebateSavings > 0 && (
-                          <div style={{display: 'flex', justifyContent: 'space-between', marginBottom: '0.5rem'}}>
-                            <span>Government rebates:</span>
-                            <span style={{color: '#ea580c'}}>{formatCurrency(rebateSavings)}</span>
-                          </div>
-                        )}
-                        <div style={{
-                          borderTop: '1px solid #e5e7eb',
-                          paddingTop: '0.5rem',
-                          display: 'flex',
-                          justifyContent: 'space-between',
-                          fontWeight: '600'
-                        }}>
-                          <span>Total potential:</span>
-                          <span style={{color: '#8b5cf6'}}>{formatCurrency(marketSavings + rebateSavings)}/year</span>
-                        </div>
-                      </div>
-                    </div>
-                  );
-                })()}
-              </div>
-
-              {/* Government Rebates */}
-              <div style={styles.resultCard}>
-                <div style={styles.cardHeader}>
-                  <div style={{...styles.cardIcon, background: '#fed7aa'}}>🎯</div>
-                  <h3 style={styles.cardTitle}>Government Rebates</h3>
-                </div>
-                
-                {(() => {
-                  const rebateValue = results.rebate_analysis?.total_rebate_value || 572;
-                  const rebateCount = results.rebate_analysis?.rebate_count || 3;
-                  const rebates = results.rebate_analysis?.applicable_rebates || [];
-                  
-                  return (
-                    <>
-                      <div style={{display: 'flex', justifyContent: 'space-between', marginBottom: '1rem'}}>
-                        <span>Available Rebates</span>
-                        <strong style={{color: '#ea580c'}}>
-                          {formatCurrency(rebateValue)}
-                        </strong>
-                      </div>
-                      <div style={{display: 'flex', justifyContent: 'space-between', marginBottom: '1rem'}}>
-                        <span>Programs Found</span>
-                        <strong>{rebateCount} rebates</strong>
-                      </div>
-                      
-                      {/* Rebate Details */}
-                      {rebates.length > 0 && (
-                        <div style={{marginBottom: '1rem'}}>
-                          <h5 style={{margin: '0 0 0.5rem 0', fontSize: '0.875rem', fontWeight: '600'}}>
-                            Available Programs:
-                          </h5>
-                          {rebates.map((rebate, index) => (
-                            <div key={index} style={{
-                              fontSize: '0.75rem',
-                              padding: '0.5rem',
-                              background: '#fef3c7',
-                              borderRadius: '0.25rem',
-                              marginBottom: '0.25rem',
-                              display: 'flex',
-                              justifyContent: 'space-between'
-                            }}>
-                              <span>{rebate.name}</span>
-                              <span style={{fontWeight: '600', color: '#ea580c'}}>
-                                {formatCurrency(rebate.value)}
-                              </span>
-                            </div>
-                          ))}
-                        </div>
-                      )}
-                      
-                      <div style={{fontSize: '0.875rem', color: '#6b7280', marginBottom: '1rem'}}>
-                        Mix of one-time rebates and ongoing credits
-                      </div>
-                      <button style={{...styles.button, background: 'linear-gradient(135deg, #ea580c, #c2410c)'}}>
-                        Apply for Rebates
-                      </button>
-                    </>
-                  );
-                })()}
-              </div>
-
-              {/* Market Insights */}
               {results.market_research?.market_insights && (
                 <div style={styles.resultCard}>
-                  <div style={styles.cardHeader}>
-                    <div style={{...styles.cardIcon, background: '#ecfdf5'}}>📈</div>
-                    <h3 style={styles.cardTitle}>Market Position</h3>
+                  <div style={{display: 'flex', alignItems: 'center', gap: '0.75rem', marginBottom: '1.5rem'}}>
+                    <div style={{
+                      width: '2.5rem',
+                      height: '2.5rem',
+                      background: '#ecfdf5',
+                      borderRadius: '0.75rem',
+                      display: 'flex',
+                      alignItems: 'center',
+                      justifyContent: 'center',
+                      fontSize: '1.25rem'
+                    }}>📈</div>
+                    <h3 style={{fontSize: '1.25rem', fontWeight: '600', color: '#111827', margin: 0}}>
+                      Market Analysis
+                    </h3>
                   </div>
                   
                   {(() => {
@@ -1008,44 +855,39 @@ const WattsMyBillApp = () => {
                         <div style={{display: 'flex', justifyContent: 'space-between', marginBottom: '1rem'}}>
                           <span>Your Rate Position</span>
                           <strong style={{
-                            color: insights.current_rate_position === 'excellent' ? '#16a34a' : 
-                                  insights.current_rate_position === 'good' ? '#f59e0b' : 
-                                  insights.current_rate_position === 'poor' ? '#dc2626' : '#6b7280'
+                            color: insights.market_position === 'excellent' ? '#16a34a' : 
+                                  insights.market_position === 'competitive' ? '#f59e0b' : '#dc2626'
                           }}>
-                            {(insights.current_rate_position || 'average').charAt(0).toUpperCase() + 
-                             (insights.current_rate_position || 'average').slice(1)}
+                            {insights.market_position?.charAt(0).toUpperCase() + insights.market_position?.slice(1)}
                           </strong>
                         </div>
-                        
-                        {insights.live_market_average && (
-                          <div style={{display: 'flex', justifyContent: 'space-between', marginBottom: '1rem'}}>
-                            <span>Market Average Rate</span>
-                            <strong>${insights.live_market_average}/kWh</strong>
-                          </div>
-                        )}
-                        
+                        <div style={{display: 'flex', justifyContent: 'space-between', marginBottom: '1rem'}}>
+                          <span>Current Rate</span>
+                          <strong>${insights.current_rate_per_kwh}/kWh</strong>
+                        </div>
+                        <div style={{display: 'flex', justifyContent: 'space-between', marginBottom: '1rem'}}>
+                          <span>State Average</span>
+                          <strong>${insights.state_average_rate}/kWh</strong>
+                        </div>
                         <div style={{display: 'flex', justifyContent: 'space-between', marginBottom: '1rem'}}>
                           <span>Plans Analyzed</span>
-                          <strong>{insights.plans_analyzed || 0} plans</strong>
+                          <strong>{insights.plans_found}</strong>
                         </div>
                         
-                        <div style={{display: 'flex', justifyContent: 'space-between', marginBottom: '1rem'}}>
-                          <span>Retailers Compared</span>
-                          <strong>{insights.retailer_count || 0} retailers</strong>
-                        </div>
-                        
-                        {insights.switching_recommendation && (
+                        {insights.market_trends && (
                           <div style={{
+                            marginTop: '1rem',
                             padding: '0.75rem',
-                            background: insights.switching_recommendation.includes('STRONG') ? '#f0fdf4' :
-                                       insights.switching_recommendation.includes('RECOMMENDED') ? '#fffbeb' : '#f8fafc',
-                            border: `1px solid ${insights.switching_recommendation.includes('STRONG') ? '#16a34a' :
-                                                  insights.switching_recommendation.includes('RECOMMENDED') ? '#f59e0b' : '#6b7280'}`,
+                            background: '#f8fafc',
                             borderRadius: '0.5rem',
-                            fontSize: '0.875rem',
-                            marginTop: '1rem'
+                            fontSize: '0.875rem'
                           }}>
-                            {insights.switching_recommendation}
+                            <strong>Market Trends:</strong>
+                            <ul style={{margin: '0.5rem 0', paddingLeft: '1rem'}}>
+                              {insights.market_trends.slice(0, 2).map((trend, idx) => (
+                                <li key={idx}>{trend}</li>
+                              ))}
+                            </ul>
                           </div>
                         )}
                       </>
@@ -1053,11 +895,280 @@ const WattsMyBillApp = () => {
                   })()}
                 </div>
               )}
+
+              {results.market_research?.usage_optimization && (
+                <div style={styles.resultCard}>
+                  <div style={{display: 'flex', alignItems: 'center', gap: '0.75rem', marginBottom: '1.5rem'}}>
+                    <div style={{
+                      width: '2.5rem',
+                      height: '2.5rem',
+                      background: '#fef3c7',
+                      borderRadius: '0.75rem',
+                      display: 'flex',
+                      alignItems: 'center',
+                      justifyContent: 'center',
+                      fontSize: '1.25rem'
+                    }}>💡</div>
+                    <h3 style={{fontSize: '1.25rem', fontWeight: '600', color: '#111827', margin: 0}}>
+                      Usage Optimization
+                    </h3>
+                  </div>
+                  
+                  {(() => {
+                    const usage = results.market_research.usage_optimization;
+                    
+                    return (
+                      <>
+                        <div style={{marginBottom: '1rem'}}>
+                          <strong style={{color: '#1e40af'}}>{usage.usage_advice}</strong>
+                        </div>
+                        
+                        <div style={{display: 'flex', justifyContent: 'space-between', marginBottom: '1rem'}}>
+                          <span>Usage Category</span>
+                          <strong style={{
+                            color: usage.usage_category === 'low' ? '#16a34a' : 
+                                  usage.usage_category === 'average' ? '#f59e0b' : '#dc2626'
+                          }}>
+                            {usage.usage_category?.charAt(0).toUpperCase() + usage.usage_category?.slice(1)}
+                          </strong>
+                        </div>
+                        
+                        <div style={{display: 'flex', justifyContent: 'space-between', marginBottom: '1rem'}}>
+                          <span>Efficiency Savings Potential</span>
+                          <strong>{formatCurrency(usage.estimated_efficiency_savings)}/year</strong>
+                        </div>
+                        
+                        {usage.priority_actions && (
+                          <div style={{
+                            marginTop: '1rem',
+                            padding: '0.75rem',
+                            background: '#fffbeb',
+                            borderRadius: '0.5rem',
+                            fontSize: '0.875rem'
+                          }}>
+                            <strong>Priority Actions:</strong>
+                            <ul style={{margin: '0.5rem 0', paddingLeft: '1rem'}}>
+                              {usage.priority_actions.map((action, idx) => (
+                                <li key={idx}>{action}</li>
+                              ))}
+                            </ul>
+                          </div>
+                        )}
+                      </>
+                    );
+                  })()}
+                </div>
+              )}
+
+              {results.market_research?.solar_analysis && (
+                <div style={styles.resultCard}>
+                  <div style={{display: 'flex', alignItems: 'center', gap: '0.75rem', marginBottom: '1.5rem'}}>
+                    <div style={{
+                      width: '2.5rem',
+                      height: '2.5rem',
+                      background: '#fef3c7',
+                      borderRadius: '0.75rem',
+                      display: 'flex',
+                      alignItems: 'center',
+                      justifyContent: 'center',
+                      fontSize: '1.25rem'
+                    }}>☀️</div>
+                    <h3 style={{fontSize: '1.25rem', fontWeight: '600', color: '#111827', margin: 0}}>
+                      Solar Analysis
+                    </h3>
+                  </div>
+                  
+                  {(() => {
+                    const solar = results.market_research.solar_analysis;
+                    
+                    return (
+                      <>
+                        {solar.has_solar ? (
+                          <>
+                            <div style={{marginBottom: '1rem'}}>
+                              <strong style={{color: '#16a34a'}}>✅ {solar.analysis}</strong>
+                            </div>
+                            
+                            <div style={{display: 'flex', justifyContent: 'space-between', marginBottom: '1rem'}}>
+                              <span>Annual Export</span>
+                              <strong>{solar.estimated_annual_export?.toLocaleString()} kWh</strong>
+                            </div>
+                            
+                            <div style={{display: 'flex', justifyContent: 'space-between', marginBottom: '1rem'}}>
+                              <span>Total Generation</span>
+                              <strong>{solar.estimated_total_generation?.toLocaleString()} kWh</strong>
+                            </div>
+                            
+                            {solar.optimization_tips && (
+                              <div style={{
+                                marginTop: '1rem',
+                                padding: '0.75rem',
+                                background: '#f0fdf4',
+                                borderRadius: '0.5rem',
+                                fontSize: '0.875rem'
+                              }}>
+                                <strong>Optimization Tips:</strong>
+                                <ul style={{margin: '0.5rem 0', paddingLeft: '1rem'}}>
+                                  {solar.optimization_tips.slice(0, 3).map((tip, idx) => (
+                                    <li key={idx}>{tip}</li>
+                                  ))}
+                                </ul>
+                              </div>
+                            )}
+                          </>
+                        ) : (
+                          <>
+                            <div style={{marginBottom: '1rem'}}>
+                              <strong style={{color: solar.solar_suitable ? '#f59e0b' : '#6b7280'}}>
+                                {solar.solar_suitable ? '💡 Solar could be beneficial' : 'ℹ️ Solar may not be cost-effective'}
+                              </strong>
+                            </div>
+                            
+                            {solar.solar_suitable && (
+                              <>
+                                <div style={{display: 'flex', justifyContent: 'space-between', marginBottom: '1rem'}}>
+                                  <span>Recommended System</span>
+                                  <strong>{solar.recommended_system_size}</strong>
+                                </div>
+                                
+                                <div style={{display: 'flex', justifyContent: 'space-between', marginBottom: '1rem'}}>
+                                  <span>Potential Savings</span>
+                                  <strong>{formatCurrency(solar.estimated_annual_savings)}/year</strong>
+                                </div>
+                                
+                                <div style={{display: 'flex', justifyContent: 'space-between', marginBottom: '1rem'}}>
+                                  <span>Payback Period</span>
+                                  <strong>{solar.payback_period}</strong>
+                                </div>
+                              </>
+                            )}
+                            
+                            {solar.next_steps && (
+                              <div style={{
+                                marginTop: '1rem',
+                                padding: '0.75rem',
+                                background: solar.solar_suitable ? '#fffbeb' : '#f8fafc',
+                                borderRadius: '0.5rem',
+                                fontSize: '0.875rem'
+                              }}>
+                                <strong>Next Steps:</strong>
+                                <ul style={{margin: '0.5rem 0', paddingLeft: '1rem'}}>
+                                  {solar.next_steps.slice(0, 3).map((step, idx) => (
+                                    <li key={idx}>{step}</li>
+                                  ))}
+                                </ul>
+                              </div>
+                            )}
+                          </>
+                        )}
+                      </>
+                    );
+                  })()}
+                </div>
+              )}
+
+              {results.market_research?.savings_analysis && (
+                <div style={styles.resultCard}>
+                  <div style={{display: 'flex', alignItems: 'center', gap: '0.75rem', marginBottom: '1.5rem'}}>
+                    <div style={{
+                      width: '2.5rem',
+                      height: '2.5rem',
+                      background: '#dcfce7',
+                      borderRadius: '0.75rem',
+                      display: 'flex',
+                      alignItems: 'center',
+                      justifyContent: 'center',
+                      fontSize: '1.25rem'
+                    }}>💰</div>
+                    <h3 style={{fontSize: '1.25rem', fontWeight: '600', color: '#111827', margin: 0}}>
+                      Savings Summary
+                    </h3>
+                  </div>
+                  
+                  {(() => {
+                    const savings = results.market_research.savings_analysis;
+                    
+                    return (
+                      <>
+                        <div style={{textAlign: 'center', marginBottom: '1.5rem'}}>
+                          <div style={{fontSize: '2rem', fontWeight: '700', color: '#16a34a', marginBottom: '0.5rem'}}>
+                            {formatCurrency(savings.max_annual_savings)}
+                          </div>
+                          <div style={{fontSize: '0.875rem', color: '#6b7280'}}>Maximum Annual Savings</div>
+                        </div>
+                        
+                        <div style={{display: 'flex', justifyContent: 'space-between', marginBottom: '1rem'}}>
+                          <span>Quarterly Savings</span>
+                          <strong>{formatCurrency(savings.max_quarterly_savings)}</strong>
+                        </div>
+                        
+                        <div style={{display: 'flex', justifyContent: 'space-between', marginBottom: '1rem'}}>
+                          <span>Better Plans Found</span>
+                          <strong>{savings.better_plans_available}</strong>
+                        </div>
+                        
+                        <div style={{display: 'flex', justifyContent: 'space-between', marginBottom: '1rem'}}>
+                          <span>Savings Potential</span>
+                          <strong style={{
+                            color: savings.savings_potential === 'high' ? '#16a34a' : 
+                                  savings.savings_potential === 'medium' ? '#f59e0b' : 
+                                  savings.savings_potential === 'low' ? '#dc2626' : '#6b7280'
+                          }}>
+                            {savings.savings_potential?.charAt(0).toUpperCase() + savings.savings_potential?.slice(1)}
+                          </strong>
+                        </div>
+                        
+                        <div style={{
+                          marginTop: '1.5rem',
+                          padding: '1rem',
+                          background: '#f0fdf4',
+                          borderRadius: '0.75rem',
+                          textAlign: 'center'
+                        }}>
+                          <strong style={{color: '#166534'}}>
+                            {savings.savings_message}
+                          </strong>
+                        </div>
+                      </>
+                    );
+                  })()}
+                </div>
+              )}
             </div>
+
+            {results.market_research?.recommended_plans && results.market_research.recommended_plans.length > 3 && (
+              <div style={{marginBottom: '3rem'}}>
+                <h3 style={{textAlign: 'center', marginBottom: '1.5rem', fontSize: '1.5rem', fontWeight: '600'}}>
+                  📊 Other Available Plans
+                </h3>
+                <div style={{
+                  display: 'grid',
+                  gridTemplateColumns: 'repeat(auto-fit, minmax(350px, 1fr))',
+                  gap: '1.5rem'
+                }}>
+                  {results.market_research.recommended_plans
+                    .slice(3, 9)
+                    .map((plan, index) => renderPlanCard(plan, index + 3))
+                  }
+                </div>
+              </div>
+            )}
+
+            {results.market_research?.savings_analysis?.savings_potential === 'none' && (
+              <div style={styles.resultCard}>
+                <div style={{textAlign: 'center'}}>
+                  <div style={{fontSize: '3rem', marginBottom: '1rem'}}>✅</div>
+                  <h3 style={{marginBottom: '1rem', color: '#16a34a'}}>Great News!</h3>
+                  <p style={{fontSize: '1.125rem', color: '#6b7280'}}>
+                    Your current energy plan is already competitive with the market. 
+                    You're getting a good deal!
+                  </p>
+                </div>
+              </div>
+            )}
           </>
         )}
 
-        {/* CTA Button - Only show after analysis or if there's an error */}
         {(results || error) && (
           <div style={{textAlign: 'center', marginTop: '3rem'}}>
             <button 
@@ -1079,16 +1190,18 @@ const WattsMyBillApp = () => {
                 e.target.style.boxShadow = 'none';
               }}
             >
-              Try Another Bill
+              Analyze Another Bill
             </button>
           </div>
         )}
       </div>
 
-      {/* Footer */}
       <div style={styles.footer}>
         <p>
-          Powered by Google Cloud ADK + Live Australian Energy Market Data
+          {agentsAvailable 
+            ? "Powered by AI Agents + Live Australian Energy Market Data"
+            : "Powered by Smart Analysis + Australian Energy Market Data"
+          }
         </p>
         <p style={{fontSize: '0.875rem', marginTop: '0.5rem'}}>
           <a 
@@ -1101,13 +1214,6 @@ const WattsMyBillApp = () => {
           </a>
         </p>
       </div>
-      
-      <style>{`
-        @keyframes pulse {
-          0%, 100% { opacity: 1; }
-          50% { opacity: 0.8; }
-        }
-      `}</style>
     </div>
   );
 };
