@@ -22,6 +22,7 @@ pandas>=2.2.0,<2.3.0
 numpy>=1.24.0,<2.0.0  # Broader range to ensure availability
 pydantic>=2.11.0,<3.0.0
 pydantic_core>=2.33.0,<3.0.0
+pandas-gbq>=0.29.0
 
 # API integrations
 requests>=2.31.0,<3.0.0
