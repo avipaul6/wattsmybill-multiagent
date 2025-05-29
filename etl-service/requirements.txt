@@ -5,3 +5,4 @@ pandas>=2.1.4
 pandas-gbq>=0.19.2
 requests>=2.31.0
 gunicorn>=21.2.0
+python-dateutil>=2.8.2
