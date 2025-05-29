@@ -15,8 +15,8 @@ import logging
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
 
-# Configuration
-PROJECT_ID = "wattsmybill-dev"
+# Configuration - Use environment variable or fallback
+PROJECT_ID = os.environ.get('GOOGLE_CLOUD_PROJECT') or os.environ.get('GCP_PROJECT_ID') or "wattsmybill-dev"
 DATASET_ID = "energy_plans"
 SERVICE_URL = "https://energy-plans-etl-YOUR_HASH.a.run.app"  # Update with actual URL
 
@@ -27,6 +27,7 @@ class DataQualityMonitor:
         self.service_url = service_url or SERVICE_URL
         self.client = bigquery.Client(project=PROJECT_ID)
         self.issues = []
+        logger.info(f"DataQualityMonitor initialized for project: {PROJECT_ID}")
         
     def check_service_health(self) -> bool:
         """Check if the ETL service is healthy"""

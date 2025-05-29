@@ -11,20 +11,22 @@ from google.cloud import bigquery
 import pandas as pd
 import logging
 import time
+import os
 
 # Setup logging
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
 
-# Configuration
-PROJECT_ID = 'wattsmybill-dev'
+# Configuration - Use environment variable or fallback
+PROJECT_ID = os.environ.get('GOOGLE_CLOUD_PROJECT') or os.environ.get('GCP_PROJECT_ID') or 'wattsmybill-dev'
 DATASET_ID = 'energy_plans'
 TABLE_ID = 'plans_simple'
 
 # Major retailers to start with
 RETAILERS = [
     "agl", "origin", "energyaustralia", "alinta", "red-energy", 
-    "lumo", "momentum", "powershop", "diamond", "dodo"
+    "lumo", "momentum", "powershop", "diamond", "dodo",
+    "amber", "nectr", "ovo-energy", "shell-energy", "globird"
 ]
 
 def create_simple_table():
@@ -185,7 +187,7 @@ def load_plans_to_bigquery(all_plans):
 
 def main():
     """Main extraction process"""
-    logger.info("Starting energy plans extraction...")
+    logger.info(f"Starting energy plans extraction for project: {PROJECT_ID}")
     
     # Create table
     create_simple_table()

@@ -8,13 +8,14 @@ import argparse
 from google.cloud import bigquery
 import pandas as pd
 import logging
+import os
 
 # Setup logging
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
 
-# Configuration
-PROJECT_ID = 'wattsmybill-dev'
+# Configuration - Use environment variable or fallback
+PROJECT_ID = os.environ.get('GOOGLE_CLOUD_PROJECT') or os.environ.get('GCP_PROJECT_ID') or 'wattsmybill-dev'
 DATASET_ID = 'energy_plans'
 
 def check_detailed_data_availability():
@@ -158,6 +159,8 @@ def main():
     parser.add_argument("--details", type=str, help="Show tariff breakdown for specific plan_id")
     
     args = parser.parse_args()
+    
+    logger.info(f"Finding accurate plans for project: {PROJECT_ID}")
     
     # Check detailed data availability
     rates_count, geo_count = check_detailed_data_availability()

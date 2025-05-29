@@ -9,13 +9,14 @@ from typing import List, Dict, Any
 from google.cloud import bigquery
 from datetime import datetime, timedelta
 import extract_tariffs
+import os
 
 # Setup logging
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
 
-# Configuration
-PROJECT_ID = 'wattsmybill-dev'
+# Configuration - Use environment variable or fallback
+PROJECT_ID = os.environ.get('GOOGLE_CLOUD_PROJECT') or os.environ.get('GCP_PROJECT_ID') or 'wattsmybill-dev'
 DATASET_ID = 'energy_plans'
 
 class RetailerManager:
@@ -49,6 +50,7 @@ class RetailerManager:
     
     def __init__(self):
         self.client = bigquery.Client(project=PROJECT_ID)
+        logger.info(f"RetailerManager initialized for project: {PROJECT_ID}")
     
     def get_retailers_with_plans(self) -> List[Dict[str, Any]]:
         """Get all retailers that have plans in the database with counts"""
