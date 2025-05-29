@@ -124,7 +124,7 @@ jobs:
             --http-method POST \
             --headers "Content-Type=application/json" \
             --message-body '{}' \
-            --attempt-deadline 3600s \
+            --attempt-deadline 1800s \
             --max-retry-attempts 2 \
             --description "Development: Daily plans extraction"
         else
@@ -146,7 +146,7 @@ jobs:
             --http-method POST \
             --headers "Content-Type=application/json" \
             --message-body '{"retailers_per_run": 2, "max_plans_per_retailer": 50}' \
-            --attempt-deadline 3600s \
+            --attempt-deadline 1800s \
             --max-retry-attempts 2 \
             --description "Development: Systematic tariff extraction"
         else
@@ -168,7 +168,7 @@ jobs:
             --http-method POST \
             --headers "Content-Type=application/json" \
             --message-body '{}' \
-            --attempt-deadline 1800s \
+            --attempt-deadline 900s \
             --max-retry-attempts 1 \
             --description "Development: Weekly postcode data update"
         fi
@@ -313,7 +313,7 @@ jobs:
             --http-method POST \
             --headers "Content-Type=application/json" \
             --message-body '{}' \
-            --attempt-deadline 3600s \
+            --attempt-deadline 1800s \
             --max-retry-attempts 2 \
             --description "Weekly extraction of energy plans"
         else
@@ -335,7 +335,7 @@ jobs:
             --http-method POST \
             --headers "Content-Type=application/json" \
             --message-body '{"retailers_per_run": 3, "max_plans_per_retailer": 100}' \
-            --attempt-deadline 3600s \
+            --attempt-deadline 1800s \
             --max-retry-attempts 2 \
             --description "Daily systematic tariff extraction"
         else
@@ -357,7 +357,7 @@ jobs:
             --http-method POST \
             --headers "Content-Type=application/json" \
             --message-body '{}' \
-            --attempt-deadline 1800s \
+            --attempt-deadline 900s \
             --max-retry-attempts 1 \
             --description "Weekly postcode data update"
         fi
