@@ -138,6 +138,21 @@ def extract_tariff_rates(plan_detail):
     
     return rates
 
+def standardize_rate_units(rate_data):
+    """Convert all rates to $/kWh for consistent comparison"""
+    unit = rate_data.get('unit', 'kWh')
+    unit_price = rate_data.get('unit_price', 0)
+    
+    if unit == 'MJ':
+        # Convert MJ to kWh (1 kWh = 3.6 MJ)
+        return unit_price / 3.6
+    elif unit == 'kWh':
+        return unit_price
+    elif unit == 'c/kWh':
+        return unit_price / 100
+    
+    return unit_price
+
 def extract_contract_rates(plan_id, contract, fuel_type):
     """Extract rates from a contract (electricity or gas)"""
     rates = []

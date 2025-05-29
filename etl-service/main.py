@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 """
-WattsMyBill ETL Service with Retailer Management
-Enhanced with systematic retailer processing
+WattsMyBill ETL Service with Complete Data Management
+Enhanced with postcode loading and comprehensive monitoring
 """
 
 import os
@@ -17,6 +17,7 @@ sys.path.append('.')
 import extract_plans
 import extract_tariffs
 import retailer_manager
+import postcode_loader
 
 # Setup logging
 logging.basicConfig(
@@ -38,22 +39,89 @@ logger.info(f"🚀 Starting WattsMyBill ETL Service - Environment: {ENVIRONMENT}
 # Initialize retailer manager
 rm = retailer_manager.RetailerManager()
 
+@app.route('/', methods=['GET'])
+def root():
+    """Root endpoint with API documentation"""
+    return jsonify({
+        "service": "WattsMyBill ETL Service",
+        "version": "2.0.0",
+        "description": "Australian Energy Plan Data ETL Service",
+        "environment": ENVIRONMENT,
+        "status": "operational",
+        "endpoints": {
+            "health": "GET /health - Service health check",
+            "api": "GET /api - API documentation",
+            "stats": "GET /stats - Database statistics",
+            "extract_plans": "POST /extract-plans - Extract basic energy plans",
+            "extract_tariffs": "POST /extract-tariffs - Extract detailed tariffs (legacy)",
+            "load_postcodes": "POST /load-postcodes - Load Australian postcode data",
+            "retailers": {
+                "status": "GET /retailers/status - Retailer extraction status",
+                "systematic": "POST /retailers/extract-systematic - Run systematic extraction",
+                "specific": "POST /retailers/{retailer}/extract - Extract for specific retailer",
+                "next": "GET /retailers/next - Get next retailers to process"
+            }
+        },
+        "timestamp": datetime.utcnow().isoformat()
+    })
+
 @app.route('/health', methods=['GET'])
 def health_check():
-    """Health check endpoint"""
+    """Comprehensive health check"""
     try:
         client = bigquery.Client(project=PROJECT_ID)
+        
+        # Test BigQuery connection
         query = f"SELECT 1 as test"
         client.query(query).result()
         
+        # Check table existence
+        tables_status = {}
+        required_tables = [
+            'plans_simple',
+            'tariff_rates', 
+            'plan_geography',
+            'australian_postcodes'
+        ]
+        
+        for table in required_tables:
+            try:
+                table_ref = f"{PROJECT_ID}.{DATASET_ID}.{table}"
+                client.get_table(table_ref)
+                tables_status[table] = "exists"
+            except:
+                tables_status[table] = "missing"
+        
+        # Get data counts
+        data_counts = {}
+        for table in required_tables:
+            if tables_status[table] == "exists":
+                try:
+                    count_query = f"SELECT COUNT(*) as count FROM `{PROJECT_ID}.{DATASET_ID}.{table}`"
+                    result = client.query(count_query).to_dataframe()
+                    data_counts[table] = int(result['count'].iloc[0])
+                except:
+                    data_counts[table] = 0
+            else:
+                data_counts[table] = 0
+        
+        # Determine overall health
+        critical_tables = ['plans_simple']
+        is_healthy = all(tables_status[table] == "exists" and data_counts[table] > 0 
+                        for table in critical_tables)
+        
         return jsonify({
-            "status": "healthy",
+            "status": "healthy" if is_healthy else "degraded",
             "service": "wattsmybill-etl",
             "environment": ENVIRONMENT,
+            "version": "2.0.0",
             "timestamp": datetime.utcnow().isoformat(),
-            "version": "1.0.0",
-            "bigquery_connection": "ok"
+            "bigquery_connection": "ok",
+            "tables_status": tables_status,
+            "data_counts": data_counts,
+            "warnings": [] if is_healthy else ["Missing critical data - run initial extraction"]
         })
+        
     except Exception as e:
         logger.error(f"Health check failed: {e}")
         return jsonify({
@@ -66,26 +134,54 @@ def health_check():
 
 @app.route('/api', methods=['GET'])  
 def api_info():
-    """API info endpoint"""
+    """Detailed API information"""
     return jsonify({
         "service": "WattsMyBill ETL Service",
-        "version": "1.0.0",
+        "version": "2.0.0",
         "environment": ENVIRONMENT,
+        "description": "Extract and manage Australian energy plan data",
+        "data_sources": [
+            "Australian Energy Regulator (AER) Consumer Data Right APIs",
+            "Australia Post Postcode Database",
+            "Government Energy Plan Registry"
+        ],
         "endpoints": {
-            "health": "GET /health",
-            "stats": "GET /stats",
-            "extract_plans": "POST /extract-plans",
-            "extract_tariffs": "POST /extract-tariffs",
-            "retailer_status": "GET /retailers/status",
-            "systematic_extraction": "POST /retailers/extract-systematic",
-            "retailer_extraction": "POST /retailers/{retailer}/extract"
+            "health": {
+                "method": "GET",
+                "path": "/health",
+                "description": "Service health and data status"
+            },
+            "stats": {
+                "method": "GET", 
+                "path": "/stats",
+                "description": "Current database statistics"
+            },
+            "extract_plans": {
+                "method": "POST",
+                "path": "/extract-plans",
+                "description": "Extract basic energy plans from all retailers"
+            },
+            "load_postcodes": {
+                "method": "POST",
+                "path": "/load-postcodes", 
+                "description": "Load Australian postcode/state mapping data"
+            },
+            "systematic_extraction": {
+                "method": "POST",
+                "path": "/retailers/extract-systematic",
+                "description": "Run systematic tariff extraction",
+                "parameters": {
+                    "retailers_per_run": "Number of retailers to process (default: 3)",
+                    "max_plans_per_retailer": "Max plans per retailer (default: 100)"
+                }
+            }
         },
         "timestamp": datetime.utcnow().isoformat()
     })
 
 @app.route('/stats', methods=['GET'])
 def get_stats():
-    """Get current database statistics"""
+    """Enhanced database statistics"""
     try:
         client = bigquery.Client(project=PROJECT_ID)
         
@@ -94,7 +190,8 @@ def get_stats():
         SELECT 
             retailer,
             fuel_type,
-            COUNT(*) as plan_count
+            COUNT(*) as plan_count,
+            MAX(extracted_at) as last_updated
         FROM `{PROJECT_ID}.{DATASET_ID}.plans_simple`
         WHERE (effective_to IS NULL OR effective_to > CURRENT_TIMESTAMP())
         GROUP BY retailer, fuel_type
@@ -104,17 +201,48 @@ def get_stats():
         
         # Get tariff data stats
         try:
-            tariff_query = f"SELECT COUNT(*) as count FROM `{PROJECT_ID}.{DATASET_ID}.tariff_rates`"
-            tariff_count = client.query(tariff_query).to_dataframe()['count'].iloc[0]
+            tariff_query = f"""
+            SELECT 
+                COUNT(*) as total_rates,
+                COUNT(DISTINCT plan_id) as plans_with_rates,
+                COUNT(DISTINCT rate_type) as rate_types,
+                MAX(extracted_at) as last_extraction
+            FROM `{PROJECT_ID}.{DATASET_ID}.tariff_rates`
+            """
+            tariff_result = client.query(tariff_query).to_dataframe()
+            tariff_stats = tariff_result.iloc[0].to_dict() if not tariff_result.empty else {}
         except:
-            tariff_count = 0
+            tariff_stats = {"total_rates": 0, "plans_with_rates": 0, "rate_types": 0}
         
         # Get geography stats
         try:
-            geo_query = f"SELECT COUNT(*) as count FROM `{PROJECT_ID}.{DATASET_ID}.plan_geography`"
-            geo_count = client.query(geo_query).to_dataframe()['count'].iloc[0]
+            geo_query = f"""
+            SELECT 
+                COUNT(*) as total_records,
+                COUNT(DISTINCT plan_id) as plans_with_geography,
+                COUNT(DISTINCT postcode) as postcodes_covered
+            FROM `{PROJECT_ID}.{DATASET_ID}.plan_geography`
+            """
+            geo_result = client.query(geo_query).to_dataframe()
+            geo_stats = geo_result.iloc[0].to_dict() if not geo_result.empty else {}
         except:
-            geo_count = 0
+            geo_stats = {"total_records": 0, "plans_with_geography": 0, "postcodes_covered": 0}
+        
+        # Get postcode stats
+        try:
+            postcode_query = f"""
+            SELECT 
+                COUNT(*) as total_postcodes,
+                COUNT(DISTINCT state) as states_covered,
+                data_source,
+                MAX(loaded_at) as last_loaded
+            FROM `{PROJECT_ID}.{DATASET_ID}.australian_postcodes`
+            GROUP BY data_source
+            """
+            postcode_result = client.query(postcode_query).to_dataframe()
+            postcode_stats = postcode_result.to_dict('records') if not postcode_result.empty else []
+        except:
+            postcode_stats = []
         
         # Get retailer coverage stats
         retailer_stats = rm.get_extraction_report()
@@ -126,11 +254,16 @@ def get_stats():
             "timestamp": datetime.utcnow().isoformat(),
             "data_summary": {
                 "total_plans": int(plans_stats['plan_count'].sum()) if not plans_stats.empty else 0,
-                "total_tariff_rates": int(tariff_count),
-                "total_geography_records": int(geo_count),
+                "total_tariff_rates": int(tariff_stats.get('total_rates', 0)),
+                "plans_with_tariffs": int(tariff_stats.get('plans_with_rates', 0)),
+                "total_geography_records": int(geo_stats.get('total_records', 0)),
+                "postcodes_available": len(postcode_stats) > 0,
                 "retailer_coverage": retailer_stats['overall_stats']
             },
-            "plans_by_retailer": plans_stats.to_dict('records') if not plans_stats.empty else []
+            "plans_by_retailer": plans_stats.to_dict('records') if not plans_stats.empty else [],
+            "tariff_extraction": tariff_stats,
+            "geography_coverage": geo_stats,
+            "postcode_data": postcode_stats
         })
         
     except Exception as e:
@@ -149,24 +282,34 @@ def extract_plans_endpoint():
     logger.info("🔄 Starting basic plans extraction...")
     
     try:
+        # Run extraction
         extract_plans.main()
         
+        # Get results
         client = bigquery.Client(project=PROJECT_ID)
-        query = f"SELECT COUNT(*) as count FROM `{PROJECT_ID}.{DATASET_ID}.plans_simple`"
+        query = f"""
+        SELECT 
+            COUNT(*) as total_plans,
+            COUNT(DISTINCT retailer) as retailers,
+            COUNT(DISTINCT fuel_type) as fuel_types
+        FROM `{PROJECT_ID}.{DATASET_ID}.plans_simple`
+        """
         result = client.query(query).to_dataframe()
-        plan_count = result['count'].iloc[0]
+        stats = result.iloc[0].to_dict()
         
-        logger.info(f"✅ Plans extraction completed: {plan_count:,} plans")
+        logger.info(f"✅ Plans extraction completed: {stats['total_plans']:,} plans from {stats['retailers']} retailers")
         
         return jsonify({
             "status": "success",
             "service": "wattsmybill-etl",
             "operation": "extract_plans",
-            "message": f"Successfully extracted {plan_count:,} energy plans",
+            "message": f"Successfully extracted {stats['total_plans']:,} energy plans",
             "environment": ENVIRONMENT,
             "timestamp": datetime.utcnow().isoformat(),
             "results": {
-                "total_plans": int(plan_count),
+                "total_plans": int(stats['total_plans']),
+                "retailers": int(stats['retailers']),
+                "fuel_types": int(stats['fuel_types']),
                 "extraction_time": datetime.utcnow().isoformat()
             }
         })
@@ -182,6 +325,51 @@ def extract_plans_endpoint():
             "timestamp": datetime.utcnow().isoformat()
         }), 500
 
+@app.route('/load-postcodes', methods=['POST'])
+def load_postcodes_endpoint():
+    """Load Australian postcode data"""
+    logger.info("🗺️ Starting postcode data loading...")
+    
+    try:
+        loader = postcode_loader.AustralianPostcodeLoader(PROJECT_ID)
+        result = loader.load_postcode_data()
+        
+        if result['status'] == 'success':
+            # Create lookup views
+            loader.create_postcode_lookup_views()
+            
+            logger.info(f"✅ Postcode loading completed: {result['records_loaded']:,} postcodes")
+            
+            return jsonify({
+                "status": "success",
+                "service": "wattsmybill-etl",
+                "operation": "load_postcodes",
+                "environment": ENVIRONMENT,
+                "timestamp": datetime.utcnow().isoformat(),
+                "results": result
+            })
+        else:
+            return jsonify({
+                "status": "error",
+                "service": "wattsmybill-etl",
+                "operation": "load_postcodes",
+                "message": result['message'],
+                "environment": ENVIRONMENT,
+                "timestamp": datetime.utcnow().isoformat()
+            }), 500
+            
+    except Exception as e:
+        logger.error(f"❌ Postcode loading failed: {e}")
+        return jsonify({
+            "status": "error",
+            "service": "wattsmybill-etl",
+            "operation": "load_postcodes",
+            "message": str(e),
+            "environment": ENVIRONMENT,
+            "timestamp": datetime.utcnow().isoformat()
+        }), 500
+
+# Keep all existing retailer management endpoints
 @app.route('/extract-tariffs', methods=['POST'])
 def extract_tariffs_endpoint():
     """Extract detailed tariff data (legacy endpoint)"""
@@ -190,7 +378,6 @@ def extract_tariffs_endpoint():
     retailer = data.get('retailer')
     
     if retailer:
-        # Use retailer manager for specific retailer
         result = rm.extract_tariffs_for_retailer(retailer, sample_size)
         return jsonify({
             "status": result['status'],
@@ -201,7 +388,6 @@ def extract_tariffs_endpoint():
             "results": result
         })
     else:
-        # Run systematic extraction
         result = rm.run_systematic_extraction(retailers_per_run=3, max_plans_per_retailer=sample_size)
         return jsonify({
             "status": result['status'],
@@ -212,7 +398,6 @@ def extract_tariffs_endpoint():
             "results": result
         })
 
-# New retailer management endpoints
 @app.route('/retailers/status', methods=['GET'])
 def retailer_status():
     """Get detailed retailer extraction status"""
@@ -225,7 +410,7 @@ def retailer_status():
             "service": "wattsmybill-etl",
             "timestamp": datetime.utcnow().isoformat(),
             "summary": report,
-            "retailer_details": retailer_details[:20]  # Top 20 retailers
+            "retailer_details": retailer_details[:20]
         })
     except Exception as e:
         logger.error(f"Retailer status failed: {e}")
@@ -327,7 +512,7 @@ def not_found(error):
         "service": "wattsmybill-etl",
         "message": "Endpoint not found",
         "available_endpoints": [
-            "/health", "/api", "/stats", "/extract-plans", "/extract-tariffs",
+            "/", "/health", "/api", "/stats", "/extract-plans", "/load-postcodes",
             "/retailers/status", "/retailers/extract-systematic", "/retailers/{retailer}/extract"
         ],
         "timestamp": datetime.utcnow().isoformat()
@@ -336,6 +521,7 @@ def not_found(error):
 @app.errorhandler(500)
 def internal_error(error):
     """500 handler"""
+    logger.error(f"Internal error: {error}")
     return jsonify({
         "status": "error",
         "service": "wattsmybill-etl",
