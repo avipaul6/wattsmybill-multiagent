@@ -274,21 +274,11 @@ def fetch_plan_detail(plan_id: str, retailer: str) -> Optional[Dict]:
         return None
 
 def extract_plan_contract_details(plan_detail: Dict, fuel_type: str) -> Dict:
-    """Extract main contract details"""
+    """Extract main contract details - Fixed for Australian CDR API"""
     plan_id = plan_detail.get("planId")
     
-    # Determine which contract to process
-    contract = None
-    if fuel_type == "ELECTRICITY" and "electricityContract" in plan_detail:
-        contract = plan_detail["electricityContract"]
-    elif fuel_type == "GAS" and "gasContract" in plan_detail:
-        contract = plan_detail["gasContract"]
-    elif fuel_type == "DUAL":
-        # For dual fuel, we'll prioritize electricity contract
-        contract = plan_detail.get("electricityContract") or plan_detail.get("gasContract")
-    
-    if not contract:
-        return {}
+    # FIXED: Australian CDR API returns contract data at root level
+    contract = plan_detail  # The plan_detail IS the contract
     
     # Extract intrinsic green power
     green_power_pct = None
@@ -465,21 +455,12 @@ def extract_comprehensive_tariff_rates(plan_detail: Dict, fuel_type: str) -> Lis
     return rates
 
 def extract_discounts(plan_detail: Dict, fuel_type: str) -> List[Dict]:
-    """Extract all discount information"""
+    """Extract all discount information - Fixed for Australian CDR API"""
     plan_id = plan_detail.get("planId")
     discounts = []
     
-    # Get contract based on fuel type
-    contract = None
-    if fuel_type == "ELECTRICITY" and "electricityContract" in plan_detail:
-        contract = plan_detail["electricityContract"]
-    elif fuel_type == "GAS" and "gasContract" in plan_detail:
-        contract = plan_detail["gasContract"]
-    
-    if not contract:
-        return discounts
-    
-    for discount in contract.get("discounts", []):
+    # FIXED: Australian CDR API has discounts at root level
+    for discount in plan_detail.get("discounts", []):
         # Base discount info
         discount_data = {
             "plan_id": plan_id,
@@ -509,21 +490,12 @@ def extract_discounts(plan_detail: Dict, fuel_type: str) -> List[Dict]:
     return discounts
 
 def extract_fees(plan_detail: Dict, fuel_type: str) -> List[Dict]:
-    """Extract all fee information"""
+    """Extract all fee information - Fixed for Australian CDR API"""
     plan_id = plan_detail.get("planId")
     fees = []
     
-    # Get contract based on fuel type
-    contract = None
-    if fuel_type == "ELECTRICITY" and "electricityContract" in plan_detail:
-        contract = plan_detail["electricityContract"]
-    elif fuel_type == "GAS" and "gasContract" in plan_detail:
-        contract = plan_detail["gasContract"]
-    
-    if not contract:
-        return fees
-    
-    for fee in contract.get("fees", []):
+    # FIXED: Australian CDR API has fees at root level
+    for fee in plan_detail.get("fees", []):
         fees.append({
             "plan_id": plan_id,
             "fuel_type": fuel_type,
@@ -538,21 +510,12 @@ def extract_fees(plan_detail: Dict, fuel_type: str) -> List[Dict]:
     return fees
 
 def extract_incentives(plan_detail: Dict, fuel_type: str) -> List[Dict]:
-    """Extract all incentive information"""
+    """Extract all incentive information - Fixed for Australian CDR API"""
     plan_id = plan_detail.get("planId")
     incentives = []
     
-    # Get contract based on fuel type
-    contract = None
-    if fuel_type == "ELECTRICITY" and "electricityContract" in plan_detail:
-        contract = plan_detail["electricityContract"]
-    elif fuel_type == "GAS" and "gasContract" in plan_detail:
-        contract = plan_detail["gasContract"]
-    
-    if not contract:
-        return incentives
-    
-    for incentive in contract.get("incentives", []):
+    # FIXED: Australian CDR API has incentives at root level
+    for incentive in plan_detail.get("incentives", []):
         incentives.append({
             "plan_id": plan_id,
             "fuel_type": fuel_type,
@@ -566,13 +529,12 @@ def extract_incentives(plan_detail: Dict, fuel_type: str) -> List[Dict]:
     return incentives
 
 def extract_solar_feed_in_tariffs(plan_detail: Dict) -> List[Dict]:
-    """Extract solar feed-in tariff information (electricity only)"""
+    """Extract solar feed-in tariff information - Fixed for Australian CDR API"""
     plan_id = plan_detail.get("planId")
     solar_fits = []
     
-    contract = plan_detail.get("electricityContract", {})
-    
-    for fit in contract.get("solarFeedInTariff", []):
+    # FIXED: Australian CDR API has solarFeedInTariff at root level
+    for fit in plan_detail.get("solarFeedInTariff", []):
         # Single tariff
         if fit.get("singleTariff"):
             single_tariff = fit["singleTariff"]
@@ -619,6 +581,107 @@ def extract_solar_feed_in_tariffs(plan_detail: Dict) -> List[Dict]:
                     "start_time": start_time,
                     "end_time": end_time,
                     "days_of_week": json.dumps(days_of_week),
+                    "extracted_at": datetime.utcnow()
+                })
+    
+    return solar_fits
+
+def extract_controlled_load(plan_detail: Dict, fuel_type: str) -> List[Dict]:
+    """Extract controlled load information - Fixed for Australian CDR API"""
+    plan_id = plan_detail.get("planId")
+    controlled_loads = []
+    
+    # FIXED: Australian CDR API has controlledLoad at root level
+    for cl in plan_detail.get("controlledLoad", []):
+        # Single rate controlled load
+        if cl.get("singleRate"):
+            single_rate = cl["singleRate"]
+            for rate in single_rate.get("rates", []):
+                controlled_loads.append({
+                    "plan_id": plan_id,
+                    "fuel_type": fuel_type,
+                    "display_name": cl.get("displayName"),
+                    "start_date": cl.get("startDate"),
+                    "end_date": cl.get("endDate"),
+                    "rate_structure": "singleRate",
+                    "daily_supply_charge": float(single_rate["dailySupplyCharge"]) if single_rate.get("dailySupplyCharge") else None,
+                    "unit_price": float(rate["unitPrice"]),
+                    "unit": rate.get("measureUnit", "KWH"),
+                    "volume": rate.get("volume"),
+                    "period": single_rate.get("period"),
+                    "extracted_at": datetime.utcnow()
+                })
+        
+        # Time of use controlled load
+        for tou in cl.get("timeOfUseRates", []):
+            for rate in tou.get("rates", []):
+                # Extract time periods
+                time_periods = tou.get("timeOfUse", [])
+                start_time = time_periods[0].get("startTime") if time_periods else None
+                end_time = time_periods[0].get("endTime") if time_periods else None
+                days_of_week = time_periods[0].get("days", []) if time_periods else []
+                
+                controlled_loads.append({
+                    "plan_id": plan_id,
+                    "fuel_type": fuel_type,
+                    "display_name": cl.get("displayName"),
+                    "start_date": cl.get("startDate"),
+                    "end_date": cl.get("endDate"),
+                    "rate_structure": "timeOfUseRates",
+                    "time_of_use_type": tou.get("type"),
+                    "daily_supply_charge": float(tou["dailySupplyCharge"]) if tou.get("dailySupplyCharge") else None,
+                    "unit_price": float(rate["unitPrice"]),
+                    "unit": rate.get("measureUnit", "KWH"),
+                    "volume": rate.get("volume"),
+                    "period": tou.get("period"),
+                    "start_time": start_time,
+                    "end_time": end_time,
+                    "days_of_week": json.dumps(days_of_week),
+                    "extracted_at": datetime.utcnow()
+                })
+    
+    return controlled_loads
+
+def extract_green_power_charges(plan_detail: Dict, fuel_type: str) -> List[Dict]:
+    """Extract green power charge information - Fixed for Australian CDR API"""
+    plan_id = plan_detail.get("planId")
+    green_power_charges = []
+    
+    # FIXED: Australian CDR API has greenPowerCharges at root level
+    for gp in plan_detail.get("greenPowerCharges", []):
+        for tier in gp.get("tiers", []):
+            green_power_charges.append({
+                "plan_id": plan_id,
+                "fuel_type": fuel_type,
+                "display_name": gp.get("displayName"),
+                "description": gp.get("description"),
+                "scheme": gp.get("scheme"),
+                "charge_type": gp.get("type"),
+                "percent_green": float(tier["percentGreen"]) if tier.get("percentGreen") else None,
+                "rate": float(tier["rate"]) if tier.get("rate") else None,
+                "amount": float(tier["amount"]) if tier.get("amount") else None,
+                "extracted_at": datetime.utcnow()
+            })
+    
+    return green_power_charges
+
+def extract_eligibility(plan_detail: Dict, fuel_type: str) -> List[Dict]:
+    """Extract eligibility criteria - Fixed for Australian CDR API"""
+    plan_id = plan_detail.get("planId")
+    eligibility_criteria = []
+    
+    # FIXED: Australian CDR API has eligibility at root level
+    for eligibility in plan_detail.get("eligibility", []):
+        eligibility_criteria.append({
+            "plan_id": plan_id,
+            "fuel_type": fuel_type,
+            "eligibility_type": eligibility.get("type"),
+            "information": eligibility.get("information"),
+            "description": eligibility.get("description"),
+            "extracted_at": datetime.utcnow()
+        })
+    
+    return eligibility_criteriadumps(days_of_week),
                     "extracted_at": datetime.utcnow()
                 })
     
