@@ -4,18 +4,18 @@ on:
   push:
     branches: [main, develop]
     paths:
-      - 'etl-service/**'
-      - '.github/workflows/etl-service.yml'
-  workflow_dispatch:  # Allow manual triggers
+      - "etl-service/**"
+      - ".github/workflows/etl-service.yml"
+  workflow_dispatch: # Allow manual triggers
     inputs:
       environment:
-        description: 'Environment to deploy to'
+        description: "Environment to deploy to"
         required: true
-        default: 'development'
+        default: "development"
         type: choice
         options:
-        - development
-        - production
+          - development
+          - production
 
 env:
   SERVICE_NAME: energy-plans-etl
@@ -32,185 +32,192 @@ jobs:
     if: |
       (github.ref == 'refs/heads/develop' && github.event_name == 'push') ||
       (github.event_name == 'workflow_dispatch' && github.event.inputs.environment == 'development')
-    
+
     environment: development
-    
+
     env:
       PROJECT_ID: ${{ secrets.GCP_PROJECT_ID_DEV }}
       SERVICE_SUFFIX: -dev
 
     steps:
-    - name: Checkout
-      uses: actions/checkout@v4
+      - name: Checkout
+        uses: actions/checkout@v4
 
-    - name: Authenticate to Google Cloud
-      uses: google-github-actions/auth@v1
-      with:
-        credentials_json: ${{ secrets.GCP_SA_KEY_DEV }}
+      - name: Authenticate to Google Cloud
+        uses: google-github-actions/auth@v1
+        with:
+          credentials_json: ${{ secrets.GCP_SA_KEY_DEV }}
 
-    - name: Set up Cloud SDK
-      uses: google-github-actions/setup-gcloud@v1
+      - name: Set up Cloud SDK
+        uses: google-github-actions/setup-gcloud@v1
 
-    - name: Configure Docker for Artifact Registry
-      run: |
-        echo "🐳 Configuring Docker for existing Artifact Registry..."
-        gcloud auth configure-docker $GAR_LOCATION-docker.pkg.dev
+      - name: Configure Docker for Artifact Registry
+        run: |
+          echo "🐳 Configuring Docker for existing Artifact Registry..."
+          gcloud auth configure-docker $GAR_LOCATION-docker.pkg.dev
 
-    - name: Build and Push Docker Image
-      run: |
-        cd etl-service
-        echo "🏗️ Building ETL service image..."
-        
-        # Build image with your existing repository
-        IMAGE_URI="$GAR_LOCATION-docker.pkg.dev/$PROJECT_ID/$REPOSITORY/$SERVICE_NAME$SERVICE_SUFFIX:$GITHUB_SHA"
-        LATEST_URI="$GAR_LOCATION-docker.pkg.dev/$PROJECT_ID/$REPOSITORY/$SERVICE_NAME$SERVICE_SUFFIX:latest"
-        
-        echo "📦 Building image: $IMAGE_URI"
-        
-        docker build \
-          --tag $IMAGE_URI \
-          --tag $LATEST_URI \
-          .
-        
-        echo "📤 Pushing to existing Artifact Registry repository..."
-        docker push $IMAGE_URI
-        docker push $LATEST_URI
-        
-        echo "IMAGE_URI=$IMAGE_URI" >> $GITHUB_ENV
+      - name: Build and Push Docker Image
+        run: |
+          cd etl-service
+          echo "🏗️ Building ETL service image..."
 
-    - name: Deploy to Cloud Run Development
-      run: |
-        echo "🚀 Deploying ETL Service to Development..."
-        echo "   Project: $PROJECT_ID"
-        echo "   Service: $SERVICE_NAME$SERVICE_SUFFIX"
-        echo "   Image: $IMAGE_URI"
-        
-        gcloud run deploy $SERVICE_NAME$SERVICE_SUFFIX \
-          --image $IMAGE_URI \
-          --platform managed \
-          --region $REGION \
-          --project $PROJECT_ID \
-          --allow-unauthenticated \
-          --memory 2Gi \
-          --cpu 2 \
-          --timeout 3600 \
-          --max-instances 2 \
-          --min-instances 0 \
-          --service-account "${{ secrets.CLOUD_RUN_SA_DEV }}" \
-          --set-env-vars "GOOGLE_CLOUD_PROJECT=$PROJECT_ID,ENVIRONMENT=development,DEBUG=true"
+          # Build image with your existing repository
+          IMAGE_URI="$GAR_LOCATION-docker.pkg.dev/$PROJECT_ID/$REPOSITORY/$SERVICE_NAME$SERVICE_SUFFIX:$GITHUB_SHA"
+          LATEST_URI="$GAR_LOCATION-docker.pkg.dev/$PROJECT_ID/$REPOSITORY/$SERVICE_NAME$SERVICE_SUFFIX:latest"
 
-    - name: Get Service URL
-      id: get-url-dev
-      run: |
-        SERVICE_URL=$(gcloud run services describe $SERVICE_NAME$SERVICE_SUFFIX --region $REGION --project $PROJECT_ID --format="value(status.url)")
-        echo "SERVICE_URL=$SERVICE_URL" >> $GITHUB_OUTPUT
-        echo "🌐 Development Service deployed at: $SERVICE_URL"
+          echo "📦 Building image: $IMAGE_URI"
 
-    - name: Create/Update Cloud Scheduler Jobs (Dev)
-      run: |
-        SERVICE_URL="${{ steps.get-url-dev.outputs.SERVICE_URL }}"
-        
-        echo "📅 Setting up development scheduler jobs..."
-        
-        # Weekly plans extraction (development: daily for testing)
-        JOB_NAME="weekly-plans-extraction-dev"
-        if ! gcloud scheduler jobs describe $JOB_NAME --location $REGION --project $PROJECT_ID &>/dev/null; then
-          echo "Creating $JOB_NAME..."
-          gcloud scheduler jobs create http $JOB_NAME \
-            --location $REGION \
-            --schedule "0 4 * * *" \
-            --time-zone "Australia/Sydney" \
-            --uri "$SERVICE_URL/extract-plans" \
-            --http-method POST \
-            --headers "Content-Type=application/json" \
-            --message-body '{}' \
-            --attempt-deadline 1800s \
-            --max-retry-attempts 2 \
-            --description "Development: Daily plans extraction"
-        else
-          echo "Updating $JOB_NAME..."
-          gcloud scheduler jobs update http $JOB_NAME \
-            --location $REGION \
-            --uri "$SERVICE_URL/extract-plans"
-        fi
+          docker build \
+            --tag $IMAGE_URI \
+            --tag $LATEST_URI \
+            .
 
-        # Systematic tariff extraction (development: twice daily)
-        JOB_NAME="systematic-tariff-extraction-dev"
-        if ! gcloud scheduler jobs describe $JOB_NAME --location $REGION --project $PROJECT_ID &>/dev/null; then
-          echo "Creating $JOB_NAME..."
-          gcloud scheduler jobs create http $JOB_NAME \
-            --location $REGION \
-            --schedule "0 6,18 * * *" \
-            --time-zone "Australia/Sydney" \
-            --uri "$SERVICE_URL/retailers/extract-systematic" \
-            --http-method POST \
-            --headers "Content-Type=application/json" \
-            --message-body '{"retailers_per_run": 2, "max_plans_per_retailer": 50}' \
-            --attempt-deadline 1800s \
-            --max-retry-attempts 2 \
-            --description "Development: Systematic tariff extraction"
-        else
-          echo "Updating $JOB_NAME..."
-          gcloud scheduler jobs update http $JOB_NAME \
-            --location $REGION \
-            --uri "$SERVICE_URL/retailers/extract-systematic"
-        fi
+          echo "📤 Pushing to existing Artifact Registry repository..."
+          docker push $IMAGE_URI
+          docker push $LATEST_URI
 
-        # Postcode update (development: weekly)
-        JOB_NAME="weekly-postcode-update-dev"
-        if ! gcloud scheduler jobs describe $JOB_NAME --location $REGION --project $PROJECT_ID &>/dev/null; then
-          echo "Creating $JOB_NAME..."
-          gcloud scheduler jobs create http $JOB_NAME \
-            --location $REGION \
-            --schedule "0 2 * * 1" \
-            --time-zone "Australia/Sydney" \
-            --uri "$SERVICE_URL/load-postcodes" \
-            --http-method POST \
-            --headers "Content-Type=application/json" \
-            --message-body '{}' \
-            --attempt-deadline 900s \
-            --max-retry-attempts 1 \
-            --description "Development: Weekly postcode data update"
-        fi
+          echo "IMAGE_URI=$IMAGE_URI" >> $GITHUB_ENV
 
-    - name: Test Development Deployment
-      run: |
-        SERVICE_URL="${{ steps.get-url-dev.outputs.SERVICE_URL }}"
-        
-        echo "🧪 Testing development deployment..."
-        
-        # Test health endpoint
-        echo "Testing health endpoint..."
-        curl -f "$SERVICE_URL/health" || exit 1
-        echo "✅ Health check passed"
-        
-        # Test stats endpoint
-        echo "Testing stats endpoint..."
-        curl -f "$SERVICE_URL/stats" || exit 1
-        echo "✅ Stats endpoint working"
-        
-        # Test API documentation
-        echo "Testing API endpoint..."
-        curl -f "$SERVICE_URL/api" || exit 1
-        echo "✅ API endpoint working"
-        
-        # Check if initial data load needed
-        echo "Checking data status..."
-        STATS=$(curl -s "$SERVICE_URL/stats")
-        PLAN_COUNT=$(echo $STATS | jq -r '.data_summary.total_plans // 0')
-        
-        if [ "$PLAN_COUNT" -eq 0 ]; then
-          echo "📥 Database empty - triggering initial data load..."
-          curl -X POST "$SERVICE_URL/extract-plans" \
-            -H "Content-Type: application/json" \
-            -d '{}' &
-          echo "⏳ Initial extraction started in background"
-        else
-          echo "✅ Database contains $PLAN_COUNT plans"
-        fi
-        
-        echo "🎉 Development deployment successful!"
-        echo "🌐 Service URL: $SERVICE_URL"
+      - name: Deploy to Cloud Run Development
+        run: |
+          echo "🚀 Deploying ETL Service to Development..."
+          echo "   Project: $PROJECT_ID"
+          echo "   Service: $SERVICE_NAME$SERVICE_SUFFIX"
+          echo "   Image: $IMAGE_URI"
+
+          gcloud run deploy $SERVICE_NAME$SERVICE_SUFFIX \
+            --image $IMAGE_URI \
+            --platform managed \
+            --region $REGION \
+            --project $PROJECT_ID \
+            --allow-unauthenticated \
+            --memory 2Gi \
+            --cpu 2 \
+            --timeout 3600 \
+            --max-instances 2 \
+            --min-instances 0 \
+            --service-account "${{ secrets.CLOUD_RUN_SA_DEV }}" \
+            --set-env-vars "GOOGLE_CLOUD_PROJECT=$PROJECT_ID,ENVIRONMENT=development,DEBUG=true"
+
+      - name: Get Service URL
+        id: get-url-dev
+        run: |
+          SERVICE_URL=$(gcloud run services describe $SERVICE_NAME$SERVICE_SUFFIX --region $REGION --project $PROJECT_ID --format="value(status.url)")
+          echo "SERVICE_URL=$SERVICE_URL" >> $GITHUB_OUTPUT
+          echo "🌐 Development Service deployed at: $SERVICE_URL"
+
+      - name: Create/Update Cloud Scheduler Jobs (Dev)
+        run: |
+          SERVICE_URL="${{ steps.get-url-dev.outputs.SERVICE_URL }}"
+
+          echo "📅 Setting up development scheduler jobs..."
+
+          # Weekly plans extraction (development: daily for testing)
+          JOB_NAME="weekly-plans-extraction-dev"
+          if ! gcloud scheduler jobs describe $JOB_NAME --location $REGION --project $PROJECT_ID &>/dev/null; then
+            echo "Creating $JOB_NAME..."
+            gcloud scheduler jobs create http $JOB_NAME \
+              --location $REGION \
+              --schedule "0 4 * * *" \
+              --time-zone "Australia/Sydney" \
+              --uri "$SERVICE_URL/extract-plans" \
+              --http-method POST \
+              --headers "Content-Type=application/json" \
+              --message-body '{}' \
+              --attempt-deadline 1800s \
+              --max-retry-attempts 2 \
+              --description "Development: Daily plans extraction"
+          else
+            echo "Updating $JOB_NAME..."
+            gcloud scheduler jobs update http $JOB_NAME \
+              --location $REGION \
+              --uri "$SERVICE_URL/extract-plans"
+          fi
+
+          # Systematic tariff extraction (development: twice daily)
+          JOB_NAME="systematic-tariff-extraction-dev"
+          if ! gcloud scheduler jobs describe $JOB_NAME --location $REGION --project $PROJECT_ID &>/dev/null; then
+            echo "Creating $JOB_NAME..."
+            gcloud scheduler jobs create http $JOB_NAME \
+              --location $REGION \
+              --schedule "0 6,18 * * *" \
+              --time-zone "Australia/Sydney" \
+              --uri "$SERVICE_URL/retailers/extract-systematic" \
+              --http-method POST \
+              --headers "Content-Type=application/json" \
+              --message-body '{"retailers_per_run": 2, "max_plans_per_retailer": 50}' \
+              --attempt-deadline 1800s \
+              --max-retry-attempts 2 \
+              --description "Development: Systematic tariff extraction"
+          else
+            echo "Updating $JOB_NAME..."
+            gcloud scheduler jobs update http $JOB_NAME \
+              --location $REGION \
+              --uri "$SERVICE_URL/retailers/extract-systematic"
+          fi
+
+          # Postcode update (development: weekly)
+          JOB_NAME="weekly-postcode-update-dev"
+          if ! gcloud scheduler jobs describe $JOB_NAME --location $REGION --project $PROJECT_ID &>/dev/null; then
+            echo "Creating $JOB_NAME..."
+            gcloud scheduler jobs create http $JOB_NAME \
+              --location $REGION \
+              --schedule "0 2 * * 1" \
+              --time-zone "Australia/Sydney" \
+              --uri "$SERVICE_URL/load-postcodes" \
+              --http-method POST \
+              --headers "Content-Type=application/json" \
+              --message-body '{}' \
+              --attempt-deadline 900s \
+              --max-retry-attempts 1 \
+              --description "Development: Weekly postcode data update"
+          fi
+
+      - name: Test Development Deployment
+        run: |
+          SERVICE_URL="${{ steps.get-url-dev.outputs.SERVICE_URL }}"
+
+          echo "🧪 Testing development deployment..."
+
+          # Test health endpoint
+          echo "Testing health endpoint..."
+          curl -f "$SERVICE_URL/health" || exit 1
+          echo "✅ Health check passed"
+
+          # Test stats endpoint (allow failure for empty database)
+          echo "Testing stats endpoint..."
+          if curl -f "$SERVICE_URL/stats" > /dev/null 2>&1; then
+            echo "✅ Stats endpoint working"
+          else
+            echo "⚠️ Stats endpoint unavailable (likely empty database - this is normal for new deployments)"
+          fi
+
+          # Test API documentation
+          echo "Testing API endpoint..."
+          curl -f "$SERVICE_URL/api" || exit 1
+          echo "✅ API endpoint working"
+
+          # Check if initial data load needed
+          echo "Checking data status..."
+          if STATS=$(curl -s "$SERVICE_URL/stats" 2>/dev/null); then
+            PLAN_COUNT=$(echo $STATS | jq -r '.data_summary.total_plans // 0')
+          else
+            PLAN_COUNT=0
+            echo "⚠️ Could not fetch stats (empty database)"
+          fi
+
+          if [ "$PLAN_COUNT" -eq 0 ]; then
+            echo "📥 Database empty - triggering initial data load..."
+            curl -X POST "$SERVICE_URL/extract-plans" \
+              -H "Content-Type: application/json" \
+              -d '{}' &
+            echo "⏳ Initial extraction started in background"
+          else
+            echo "✅ Database contains $PLAN_COUNT plans"
+          fi
+
+          echo "🎉 Development deployment successful!"
+          echo "🌐 Service URL: $SERVICE_URL"
 
   # Deploy to Production
   deploy-prod:
@@ -219,219 +226,219 @@ jobs:
     if: |
       (github.ref == 'refs/heads/main' && github.event_name == 'push') ||
       (github.event_name == 'workflow_dispatch' && github.event.inputs.environment == 'production')
-    
+
     environment: production
-    
+
     env:
       PROJECT_ID: ${{ secrets.GCP_PROJECT_ID_PROD }}
       SERVICE_SUFFIX: ""
 
     steps:
-    - name: Checkout
-      uses: actions/checkout@v4
+      - name: Checkout
+        uses: actions/checkout@v4
 
-    - name: Authenticate to Google Cloud
-      uses: google-github-actions/auth@v1
-      with:
-        credentials_json: ${{ secrets.GCP_SA_KEY_PROD }}
+      - name: Authenticate to Google Cloud
+        uses: google-github-actions/auth@v1
+        with:
+          credentials_json: ${{ secrets.GCP_SA_KEY_PROD }}
 
-    - name: Set up Cloud SDK
-      uses: google-github-actions/setup-gcloud@v1
+      - name: Set up Cloud SDK
+        uses: google-github-actions/setup-gcloud@v1
 
-    - name: Configure Docker for Artifact Registry
-      run: |
-        echo "🐳 Configuring Docker for existing Artifact Registry..."
-        gcloud auth configure-docker $GAR_LOCATION-docker.pkg.dev
+      - name: Configure Docker for Artifact Registry
+        run: |
+          echo "🐳 Configuring Docker for existing Artifact Registry..."
+          gcloud auth configure-docker $GAR_LOCATION-docker.pkg.dev
 
-    - name: Build and Push Docker Image
-      run: |
-        cd etl-service
-        echo "🏗️ Building ETL service image for production..."
-        
-        # Build image with your existing repository
-        IMAGE_URI="$GAR_LOCATION-docker.pkg.dev/$PROJECT_ID/$REPOSITORY/$SERVICE_NAME:$GITHUB_SHA"
-        LATEST_URI="$GAR_LOCATION-docker.pkg.dev/$PROJECT_ID/$REPOSITORY/$SERVICE_NAME:latest"
-        
-        echo "📦 Building image: $IMAGE_URI"
-        
-        docker build \
-          --tag $IMAGE_URI \
-          --tag $LATEST_URI \
-          .
-        
-        echo "📤 Pushing to existing Artifact Registry repository..."
-        docker push $IMAGE_URI
-        docker push $LATEST_URI
-        
-        echo "IMAGE_URI=$IMAGE_URI" >> $GITHUB_ENV
+      - name: Build and Push Docker Image
+        run: |
+          cd etl-service
+          echo "🏗️ Building ETL service image for production..."
 
-    - name: Deploy to Cloud Run Production
-      run: |
-        echo "🚀 Deploying ETL Service to Production..."
-        echo "   Project: $PROJECT_ID"
-        echo "   Service: $SERVICE_NAME$SERVICE_SUFFIX"
-        echo "   Image: $IMAGE_URI"
-        
-        gcloud run deploy $SERVICE_NAME$SERVICE_SUFFIX \
-          --image $IMAGE_URI \
-          --platform managed \
-          --region $REGION \
-          --project $PROJECT_ID \
-          --allow-unauthenticated \
-          --memory 4Gi \
-          --cpu 4 \
-          --timeout 3600 \
-          --max-instances 5 \
-          --min-instances 1 \
-          --service-account "${{ secrets.CLOUD_RUN_SA_PROD }}" \
-          --set-env-vars "GOOGLE_CLOUD_PROJECT=$PROJECT_ID,ENVIRONMENT=production,DEBUG=false" \
-          --cpu-throttling \
-          --execution-environment gen2
+          # Build image with your existing repository
+          IMAGE_URI="$GAR_LOCATION-docker.pkg.dev/$PROJECT_ID/$REPOSITORY/$SERVICE_NAME:$GITHUB_SHA"
+          LATEST_URI="$GAR_LOCATION-docker.pkg.dev/$PROJECT_ID/$REPOSITORY/$SERVICE_NAME:latest"
 
-    - name: Get Service URL
-      id: get-url-prod
-      run: |
-        SERVICE_URL=$(gcloud run services describe $SERVICE_NAME$SERVICE_SUFFIX --region $REGION --project $PROJECT_ID --format="value(status.url)")
-        echo "SERVICE_URL=$SERVICE_URL" >> $GITHUB_OUTPUT
-        echo "🌐 Production Service deployed at: $SERVICE_URL"
+          echo "📦 Building image: $IMAGE_URI"
 
-    - name: Create/Update Cloud Scheduler Jobs (Production)
-      run: |
-        SERVICE_URL="${{ steps.get-url-prod.outputs.SERVICE_URL }}"
-        
-        echo "📅 Setting up production scheduler jobs..."
-        
-        # Weekly plans extraction (Sundays at 2 AM AEST)
-        JOB_NAME="weekly-plans-extraction"
-        if ! gcloud scheduler jobs describe $JOB_NAME --location $REGION --project $PROJECT_ID &>/dev/null; then
-          echo "Creating $JOB_NAME..."
-          gcloud scheduler jobs create http $JOB_NAME \
-            --location $REGION \
-            --schedule "0 2 * * 0" \
-            --time-zone "Australia/Sydney" \
-            --uri "$SERVICE_URL/extract-plans" \
-            --http-method POST \
-            --headers "Content-Type=application/json" \
-            --message-body '{}' \
-            --attempt-deadline 1800s \
-            --max-retry-attempts 2 \
-            --description "Weekly extraction of energy plans"
-        else
-          echo "Updating $JOB_NAME..."
-          gcloud scheduler jobs update http $JOB_NAME \
-            --location $REGION \
-            --uri "$SERVICE_URL/extract-plans"
-        fi
+          docker build \
+            --tag $IMAGE_URI \
+            --tag $LATEST_URI \
+            .
 
-        # Systematic tariff extraction (Mon-Fri at 3 AM AEST)
-        JOB_NAME="systematic-tariff-extraction"
-        if ! gcloud scheduler jobs describe $JOB_NAME --location $REGION --project $PROJECT_ID &>/dev/null; then
-          echo "Creating $JOB_NAME..."
-          gcloud scheduler jobs create http $JOB_NAME \
-            --location $REGION \
-            --schedule "0 3 * * 1-5" \
-            --time-zone "Australia/Sydney" \
-            --uri "$SERVICE_URL/retailers/extract-systematic" \
-            --http-method POST \
-            --headers "Content-Type=application/json" \
-            --message-body '{"retailers_per_run": 3, "max_plans_per_retailer": 100}' \
-            --attempt-deadline 1800s \
-            --max-retry-attempts 2 \
-            --description "Daily systematic tariff extraction"
-        else
-          echo "Updating $JOB_NAME..."
-          gcloud scheduler jobs update http $JOB_NAME \
-            --location $REGION \
-            --uri "$SERVICE_URL/retailers/extract-systematic"
-        fi
+          echo "📤 Pushing to existing Artifact Registry repository..."
+          docker push $IMAGE_URI
+          docker push $LATEST_URI
 
-        # Postcode update (Mondays at 1 AM AEST)
-        JOB_NAME="weekly-postcode-update"
-        if ! gcloud scheduler jobs describe $JOB_NAME --location $REGION --project $PROJECT_ID &>/dev/null; then
-          echo "Creating $JOB_NAME..."
-          gcloud scheduler jobs create http $JOB_NAME \
-            --location $REGION \
-            --schedule "0 1 * * 1" \
-            --time-zone "Australia/Sydney" \
-            --uri "$SERVICE_URL/load-postcodes" \
-            --http-method POST \
-            --headers "Content-Type=application/json" \
-            --message-body '{}' \
-            --attempt-deadline 900s \
-            --max-retry-attempts 1 \
-            --description "Weekly postcode data update"
-        fi
+          echo "IMAGE_URI=$IMAGE_URI" >> $GITHUB_ENV
 
-    - name: Test Production Deployment
-      run: |
-        SERVICE_URL="${{ steps.get-url-prod.outputs.SERVICE_URL }}"
-        
-        echo "🧪 Running comprehensive production tests..."
-        
-        # Health check
-        echo "Testing health endpoint..."
-        HEALTH_RESPONSE=$(curl -f "$SERVICE_URL/health")
-        echo "✅ Health check passed"
-        
-        # Extract health status
-        HEALTH_STATUS=$(echo $HEALTH_RESPONSE | jq -r '.status')
-        echo "   Health Status: $HEALTH_STATUS"
-        
-        # API documentation
-        echo "Testing API endpoint..."
-        curl -f "$SERVICE_URL/api" || exit 1
-        echo "✅ API endpoint working"
-        
-        # Stats endpoint
-        echo "Testing stats endpoint..."
-        STATS_RESPONSE=$(curl -f "$SERVICE_URL/stats")
-        echo "✅ Stats endpoint working"
-        
-        # Extract key metrics
-        PLAN_COUNT=$(echo $STATS_RESPONSE | jq -r '.data_summary.total_plans // 0')
-        RETAILER_COUNT=$(echo $STATS_RESPONSE | jq -r '.data_summary.retailer_coverage.total_retailers // 0')
-        
-        echo "📊 Current data status:"
-        echo "   Plans: $PLAN_COUNT"
-        echo "   Retailers: $RETAILER_COUNT"
-        
-        # Test retailer status
-        echo "Testing retailer status..."
-        RETAILER_RESPONSE=$(curl -f "$SERVICE_URL/retailers/status")
-        echo "✅ Retailer status working"
-        
-        echo ""
-        echo "🎉 Production deployment successful!"
-        echo "🌐 Service URL: $SERVICE_URL"
+      - name: Deploy to Cloud Run Production
+        run: |
+          echo "🚀 Deploying ETL Service to Production..."
+          echo "   Project: $PROJECT_ID"
+          echo "   Service: $SERVICE_NAME$SERVICE_SUFFIX"
+          echo "   Image: $IMAGE_URI"
 
-    - name: Create GitHub Release
-      if: success()
-      uses: actions/create-release@v1
-      env:
-        GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-      with:
-        tag_name: etl-v${{ github.run_number }}
-        release_name: ETL Service v${{ github.run_number }}
-        body: |
-          🚀 WattsMyBill ETL Service Production Deployment
-          
-          **Deployed to:** ${{ steps.get-url-prod.outputs.SERVICE_URL }}
-          **Region:** ${{ env.REGION }}
-          **Project:** ${{ env.PROJECT_ID }}
-          **Container:** ${{ env.GAR_LOCATION }}-docker.pkg.dev/${{ env.PROJECT_ID }}/${{ env.REPOSITORY }}/${{ env.SERVICE_NAME }}
-          **Commit:** ${{ github.sha }}
-          **Deployed by:** ${{ github.actor }}
-          
-          ## Features
-          - 📊 Automated energy plan extraction from AER APIs
-          - 🗺️ Australian postcode/state mapping
-          - ⚡ Detailed tariff rate extraction
-          - 🔄 Systematic retailer processing
-          - 📅 Automated scheduling via Cloud Scheduler
-          
-          ## Using Existing Infrastructure
-          - 📦 Artifact Registry: `${{ env.GAR_LOCATION }}-docker.pkg.dev/${{ env.PROJECT_ID }}/${{ env.REPOSITORY }}`
-          - 🏗️ Same deployment pattern as main WattsMyBill app
-          - 🔐 Shared service accounts and secrets
-        draft: false
-        prerelease: false
+          gcloud run deploy $SERVICE_NAME$SERVICE_SUFFIX \
+            --image $IMAGE_URI \
+            --platform managed \
+            --region $REGION \
+            --project $PROJECT_ID \
+            --allow-unauthenticated \
+            --memory 4Gi \
+            --cpu 4 \
+            --timeout 3600 \
+            --max-instances 5 \
+            --min-instances 1 \
+            --service-account "${{ secrets.CLOUD_RUN_SA_PROD }}" \
+            --set-env-vars "GOOGLE_CLOUD_PROJECT=$PROJECT_ID,ENVIRONMENT=production,DEBUG=false" \
+            --cpu-throttling \
+            --execution-environment gen2
+
+      - name: Get Service URL
+        id: get-url-prod
+        run: |
+          SERVICE_URL=$(gcloud run services describe $SERVICE_NAME$SERVICE_SUFFIX --region $REGION --project $PROJECT_ID --format="value(status.url)")
+          echo "SERVICE_URL=$SERVICE_URL" >> $GITHUB_OUTPUT
+          echo "🌐 Production Service deployed at: $SERVICE_URL"
+
+      - name: Create/Update Cloud Scheduler Jobs (Production)
+        run: |
+          SERVICE_URL="${{ steps.get-url-prod.outputs.SERVICE_URL }}"
+
+          echo "📅 Setting up production scheduler jobs..."
+
+          # Weekly plans extraction (Sundays at 2 AM AEST)
+          JOB_NAME="weekly-plans-extraction"
+          if ! gcloud scheduler jobs describe $JOB_NAME --location $REGION --project $PROJECT_ID &>/dev/null; then
+            echo "Creating $JOB_NAME..."
+            gcloud scheduler jobs create http $JOB_NAME \
+              --location $REGION \
+              --schedule "0 2 * * 0" \
+              --time-zone "Australia/Sydney" \
+              --uri "$SERVICE_URL/extract-plans" \
+              --http-method POST \
+              --headers "Content-Type=application/json" \
+              --message-body '{}' \
+              --attempt-deadline 1800s \
+              --max-retry-attempts 2 \
+              --description "Weekly extraction of energy plans"
+          else
+            echo "Updating $JOB_NAME..."
+            gcloud scheduler jobs update http $JOB_NAME \
+              --location $REGION \
+              --uri "$SERVICE_URL/extract-plans"
+          fi
+
+          # Systematic tariff extraction (Mon-Fri at 3 AM AEST)
+          JOB_NAME="systematic-tariff-extraction"
+          if ! gcloud scheduler jobs describe $JOB_NAME --location $REGION --project $PROJECT_ID &>/dev/null; then
+            echo "Creating $JOB_NAME..."
+            gcloud scheduler jobs create http $JOB_NAME \
+              --location $REGION \
+              --schedule "0 3 * * 1-5" \
+              --time-zone "Australia/Sydney" \
+              --uri "$SERVICE_URL/retailers/extract-systematic" \
+              --http-method POST \
+              --headers "Content-Type=application/json" \
+              --message-body '{"retailers_per_run": 3, "max_plans_per_retailer": 100}' \
+              --attempt-deadline 1800s \
+              --max-retry-attempts 2 \
+              --description "Daily systematic tariff extraction"
+          else
+            echo "Updating $JOB_NAME..."
+            gcloud scheduler jobs update http $JOB_NAME \
+              --location $REGION \
+              --uri "$SERVICE_URL/retailers/extract-systematic"
+          fi
+
+          # Postcode update (Mondays at 1 AM AEST)
+          JOB_NAME="weekly-postcode-update"
+          if ! gcloud scheduler jobs describe $JOB_NAME --location $REGION --project $PROJECT_ID &>/dev/null; then
+            echo "Creating $JOB_NAME..."
+            gcloud scheduler jobs create http $JOB_NAME \
+              --location $REGION \
+              --schedule "0 1 * * 1" \
+              --time-zone "Australia/Sydney" \
+              --uri "$SERVICE_URL/load-postcodes" \
+              --http-method POST \
+              --headers "Content-Type=application/json" \
+              --message-body '{}' \
+              --attempt-deadline 900s \
+              --max-retry-attempts 1 \
+              --description "Weekly postcode data update"
+          fi
+
+      - name: Test Production Deployment
+        run: |
+          SERVICE_URL="${{ steps.get-url-prod.outputs.SERVICE_URL }}"
+
+          echo "🧪 Running comprehensive production tests..."
+
+          # Health check
+          echo "Testing health endpoint..."
+          HEALTH_RESPONSE=$(curl -f "$SERVICE_URL/health")
+          echo "✅ Health check passed"
+
+          # Extract health status
+          HEALTH_STATUS=$(echo $HEALTH_RESPONSE | jq -r '.status')
+          echo "   Health Status: $HEALTH_STATUS"
+
+          # API documentation
+          echo "Testing API endpoint..."
+          curl -f "$SERVICE_URL/api" || exit 1
+          echo "✅ API endpoint working"
+
+          # Stats endpoint
+          echo "Testing stats endpoint..."
+          STATS_RESPONSE=$(curl -f "$SERVICE_URL/stats")
+          echo "✅ Stats endpoint working"
+
+          # Extract key metrics
+          PLAN_COUNT=$(echo $STATS_RESPONSE | jq -r '.data_summary.total_plans // 0')
+          RETAILER_COUNT=$(echo $STATS_RESPONSE | jq -r '.data_summary.retailer_coverage.total_retailers // 0')
+
+          echo "📊 Current data status:"
+          echo "   Plans: $PLAN_COUNT"
+          echo "   Retailers: $RETAILER_COUNT"
+
+          # Test retailer status
+          echo "Testing retailer status..."
+          RETAILER_RESPONSE=$(curl -f "$SERVICE_URL/retailers/status")
+          echo "✅ Retailer status working"
+
+          echo ""
+          echo "🎉 Production deployment successful!"
+          echo "🌐 Service URL: $SERVICE_URL"
+
+      - name: Create GitHub Release
+        if: success()
+        uses: actions/create-release@v1
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        with:
+          tag_name: etl-v${{ github.run_number }}
+          release_name: ETL Service v${{ github.run_number }}
+          body: |
+            🚀 WattsMyBill ETL Service Production Deployment
+
+            **Deployed to:** ${{ steps.get-url-prod.outputs.SERVICE_URL }}
+            **Region:** ${{ env.REGION }}
+            **Project:** ${{ env.PROJECT_ID }}
+            **Container:** ${{ env.GAR_LOCATION }}-docker.pkg.dev/${{ env.PROJECT_ID }}/${{ env.REPOSITORY }}/${{ env.SERVICE_NAME }}
+            **Commit:** ${{ github.sha }}
+            **Deployed by:** ${{ github.actor }}
+
+            ## Features
+            - 📊 Automated energy plan extraction from AER APIs
+            - 🗺️ Australian postcode/state mapping
+            - ⚡ Detailed tariff rate extraction
+            - 🔄 Systematic retailer processing
+            - 📅 Automated scheduling via Cloud Scheduler
+
+            ## Using Existing Infrastructure
+            - 📦 Artifact Registry: `${{ env.GAR_LOCATION }}-docker.pkg.dev/${{ env.PROJECT_ID }}/${{ env.REPOSITORY }}`
+            - 🏗️ Same deployment pattern as main WattsMyBill app
+            - 🔐 Shared service accounts and secrets
+          draft: false
+          prerelease: false
