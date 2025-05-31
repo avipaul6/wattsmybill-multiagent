@@ -247,8 +247,18 @@ def extract_plan_contract_details(plan_detail: Dict, fuel_type: str) -> Dict:
     """Extract main contract details - FIXED for Australian CDR API"""
     plan_id = plan_detail.get("planId")
     
-    # FIXED: Australian CDR API returns contract data at root level
-    contract = plan_detail  # The plan_detail IS the contract
+    # FIXED: Get the correct contract based on fuel type
+    if fuel_type == "ELECTRICITY":
+        contract = plan_detail.get("electricityContract", {})
+    elif fuel_type == "GAS":
+        contract = plan_detail.get("gasContract", {})
+    else:
+        # For DUAL fuel, try electricity first, then gas, then root level
+        contract = plan_detail.get("electricityContract") or plan_detail.get("gasContract") or plan_detail
+    
+    # If no contract found, fallback to root level
+    if not contract:
+        contract = plan_detail
     
     # Extract intrinsic green power
     green_power_pct = None
@@ -277,18 +287,51 @@ def extract_plan_contract_details(plan_detail: Dict, fuel_type: str) -> Dict:
         "extracted_at": datetime.utcnow()
     }
 
+
+# Add this helper function at the top of your file
+def safe_date_parse(date_str):
+    """Safely parse date string to proper format for BigQuery"""
+    if not date_str:
+        return None
+    try:
+        # If it's already a datetime object, convert to date
+        if isinstance(date_str, datetime):
+            return date_str.date()
+        # If it's a string, parse it
+        if isinstance(date_str, str):
+            # Handle various date formats
+            for fmt in ['%Y-%m-%d', '%Y-%m-%dT%H:%M:%S', '%Y-%m-%dT%H:%M:%SZ']:
+                try:
+                    return datetime.strptime(date_str, fmt).date()
+                except ValueError:
+                    continue
+        return None
+    except:
+        return None
+
+# Then modify the tariff rates extraction to use safe date parsing:
 def extract_comprehensive_tariff_rates(plan_detail: Dict, fuel_type: str) -> List[Dict]:
     """Extract all tariff rates - FIXED for Australian CDR API structure"""
     plan_id = plan_detail.get("planId")
     rates = []
     
-    # FIXED: Australian CDR API returns tariff data at root level, not nested
-    # Process tariff periods directly from plan_detail
-    for period in plan_detail.get("tariffPeriod", []):
+    # Get the correct contract based on fuel type
+    if fuel_type == "ELECTRICITY":
+        contract = plan_detail.get("electricityContract", {})
+    elif fuel_type == "GAS":
+        contract = plan_detail.get("gasContract", {})
+    else:
+        contract = plan_detail.get("electricityContract") or plan_detail.get("gasContract") or plan_detail
+    
+    if not contract:
+        contract = plan_detail
+    
+    # Process tariff periods from the correct contract location
+    for period in contract.get("tariffPeriod", []):
         period_type = period.get("type", "STANDARD")
         period_name = period.get("displayName", "Standard Period")
-        start_date = period.get("startDate")
-        end_date = period.get("endDate")
+        start_date = safe_date_parse(period.get("startDate"))  # ✅ Fix date parsing
+        end_date = safe_date_parse(period.get("endDate"))      # ✅ Fix date parsing
         
         # Daily supply charges
         if period.get("dailySupplyCharge"):
@@ -297,8 +340,8 @@ def extract_comprehensive_tariff_rates(plan_detail: Dict, fuel_type: str) -> Lis
                 "fuel_type": fuel_type,
                 "tariff_period_type": period_type,
                 "tariff_period_name": period_name,
-                "start_date": start_date,
-                "end_date": end_date,
+                "start_date": start_date,  # ✅ Now properly formatted
+                "end_date": end_date,      # ✅ Now properly formatted
                 "rate_structure": "dailySupplyCharge",
                 "rate_type": "DAILY_SUPPLY",
                 "time_of_use_type": "ALL_DAY",
@@ -312,19 +355,20 @@ def extract_comprehensive_tariff_rates(plan_detail: Dict, fuel_type: str) -> Lis
         if period.get("singleRate"):
             single_rate = period["singleRate"]
             
-            # Stepped rates within single rate
             for rate in single_rate.get("rates", []):
                 rates.append({
                     "plan_id": plan_id,
                     "fuel_type": fuel_type,
                     "tariff_period_type": period_type,
                     "tariff_period_name": period_name,
+                    "start_date": start_date,  # ✅ Now properly formatted
+                    "end_date": end_date,      # ✅ Now properly formatted
                     "rate_structure": "singleRate",
                     "rate_type": "USAGE",
                     "time_of_use_type": "ALL_DAY",
                     "unit_price": float(rate["unitPrice"]),
                     "unit": rate.get("measureUnit", "KWH" if fuel_type == "ELECTRICITY" else "MJ"),
-                    "volume_min": rate.get("volume"),
+                    "volume_min": float(rate["volume"]) if rate.get("volume") else None,  # ✅ Safe float conversion
                     "period": single_rate.get("period"),
                     "extracted_at": datetime.utcnow()
                 })
@@ -334,7 +378,6 @@ def extract_comprehensive_tariff_rates(plan_detail: Dict, fuel_type: str) -> Lis
             tou_type = tou.get("type")
             
             for rate in tou.get("rates", []):
-                # Extract time periods
                 time_periods = tou.get("timeOfUse", [])
                 start_time = time_periods[0].get("startTime") if time_periods else None
                 end_time = time_periods[0].get("endTime") if time_periods else None
@@ -345,12 +388,14 @@ def extract_comprehensive_tariff_rates(plan_detail: Dict, fuel_type: str) -> Lis
                     "fuel_type": fuel_type,
                     "tariff_period_type": period_type,
                     "tariff_period_name": period_name,
+                    "start_date": start_date,  # ✅ Now properly formatted
+                    "end_date": end_date,      # ✅ Now properly formatted
                     "rate_structure": "timeOfUseRates",
                     "rate_type": "USAGE",
                     "time_of_use_type": tou_type,
                     "unit_price": float(rate["unitPrice"]),
                     "unit": rate.get("measureUnit", "KWH" if fuel_type == "ELECTRICITY" else "MJ"),
-                    "volume_min": rate.get("volume"),
+                    "volume_min": float(rate["volume"]) if rate.get("volume") else None,  # ✅ Safe float conversion
                     "period": tou.get("period"),
                     "start_time": start_time,
                     "end_time": end_time,
@@ -366,6 +411,8 @@ def extract_comprehensive_tariff_rates(plan_detail: Dict, fuel_type: str) -> Lis
                     "fuel_type": fuel_type,
                     "tariff_period_type": period_type,
                     "tariff_period_name": period_name,
+                    "start_date": start_date,  # ✅ Now properly formatted
+                    "end_date": end_date,      # ✅ Now properly formatted
                     "rate_structure": "demandCharges",
                     "rate_type": "DEMAND",
                     "unit_price": float(demand.get("amount", 0)),
@@ -388,8 +435,19 @@ def extract_fees(plan_detail: Dict, fuel_type: str) -> List[Dict]:
     plan_id = plan_detail.get("planId")
     fees = []
     
-    # FIXED: Australian CDR API has fees at root level
-    for fee in plan_detail.get("fees", []):
+    # FIXED: Get the correct contract based on fuel type
+    if fuel_type == "ELECTRICITY":
+        contract = plan_detail.get("electricityContract", {})
+    elif fuel_type == "GAS":
+        contract = plan_detail.get("gasContract", {})
+    else:
+        contract = plan_detail.get("electricityContract") or plan_detail.get("gasContract") or plan_detail
+    
+    if not contract:
+        contract = plan_detail
+    
+    # Extract fees from the correct contract location
+    for fee in contract.get("fees", []):
         fees.append({
             "plan_id": plan_id,
             "fuel_type": fuel_type,
@@ -408,8 +466,13 @@ def extract_solar_feed_in_tariffs(plan_detail: Dict) -> List[Dict]:
     plan_id = plan_detail.get("planId")
     solar_fits = []
     
-    # FIXED: Australian CDR API has solarFeedInTariff at root level
-    for fit in plan_detail.get("solarFeedInTariff", []):
+    # FIXED: Get from electricityContract, not root level
+    contract = plan_detail.get("electricityContract", {})
+    if not contract:
+        contract = plan_detail  # Fallback to root level
+    
+    # Extract solar FIT from the correct contract location
+    for fit in contract.get("solarFeedInTariff", []):
         # Single tariff
         if fit.get("singleTariff"):
             single_tariff = fit["singleTariff"]
@@ -437,8 +500,19 @@ def extract_green_power_charges(plan_detail: Dict, fuel_type: str) -> List[Dict]
     plan_id = plan_detail.get("planId")
     green_power_charges = []
     
-    # FIXED: Australian CDR API has greenPowerCharges at root level
-    for gp in plan_detail.get("greenPowerCharges", []):
+    # FIXED: Get the correct contract based on fuel type
+    if fuel_type == "ELECTRICITY":
+        contract = plan_detail.get("electricityContract", {})
+    elif fuel_type == "GAS":
+        contract = plan_detail.get("gasContract", {})
+    else:
+        contract = plan_detail.get("electricityContract") or plan_detail.get("gasContract") or plan_detail
+    
+    if not contract:
+        contract = plan_detail
+    
+    # Extract green power from the correct contract location
+    for gp in contract.get("greenPowerCharges", []):
         for tier in gp.get("tiers", []):
             green_power_charges.append({
                 "plan_id": plan_id,
