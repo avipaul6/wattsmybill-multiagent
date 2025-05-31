@@ -213,68 +213,206 @@ if ADK_AVAILABLE and not agent_factory:
     agent_factory = AgentFactory()
 
 # Validation function
+# REPLACE the validate_energy_bill function in your main.py with this enhanced version:
+
 def validate_energy_bill(file_content: bytes, filename: str) -> Dict[str, Any]:
-    """Enhanced bill validation with detailed analysis"""
+    """Enhanced bill validation with comprehensive debugging and relaxed criteria"""
     
-    if len(file_content) < 1000:
+    # Get supported companies from agent factory
+    supported_companies = agent_factory.supported_companies if agent_factory else [
+        "AGL", "Origin Energy", "Energy Australia", "Alinta Energy",
+        "Red Energy", "Simply Energy", "Powershop", "Amber Electric",
+        "Diamond Energy", "CovaU", "ReAmped Energy", "Sumo Power",
+        "OVO Energy", "Momentum Energy", "GloBird Energy", "Tango Energy"
+    ]
+    
+    # Convert content to string for analysis
+    try:
+        content_str = ""
+        if isinstance(file_content, bytes):
+            for encoding in ['utf-8', 'latin-1', 'ascii', 'utf-16']:
+                try:
+                    content_str = file_content.decode(encoding, errors='ignore').lower()
+                    break
+                except:
+                    continue
+        else:
+            content_str = str(file_content).lower()
+        
+        print(f"🔍 VALIDATION DEBUG for {filename}")
+        print(f"   File size: {len(file_content)} bytes")
+        print(f"   Content preview: {content_str[:200]}")
+        
+    except Exception as e:
+        print(f"❌ Content extraction failed: {e}")
+        return {
+            "is_valid": False,
+            "error": f"Could not extract text from file: {str(e)}",
+            "validation_details": {"extraction_error": True}
+        }
+    
+    # Basic file validation - RELAXED threshold
+    if len(file_content) < 500:  # Reduced from 1000
         return {
             "is_valid": False,
             "error": "File too small to be a valid energy bill",
-            "validation_details": {"file_size": len(file_content)}
+            "validation_details": {"file_size": len(file_content), "min_required": 500}
         }
-
-    content_str = str(file_content).lower()
-    energy_terms = ['kwh', 'electricity', 'energy', 'usage', 'tariff', 'supply charge']
-    australian_terms = ['abn', 'gst', 'australia', 'nsw', 'vic', 'qld', 'sa', 'wa', 'nt', 'tas', 'act']
-
-    energy_count = sum(1 for term in energy_terms if term in content_str)
-    australian_count = sum(1 for term in australian_terms if term in content_str)
-
-    supported_companies = agent_factory.supported_companies if agent_factory else []
+    
+    # ENHANCED: More comprehensive energy-related terms
+    energy_terms = [
+        # Core energy terms
+        'kwh', 'kw.h', 'kilowatt', 'electricity', 'energy', 'usage', 'consumption',
+        'tariff', 'supply charge', 'daily charge', 'connection charge',
+        # Bill-specific terms
+        'meter reading', 'meter number', 'billing period', 'account number',
+        'current charges', 'previous balance', 'total amount',
+        # Rate and pricing terms
+        'rate', 'cents per kwh', 'c/kwh', '$/kwh', 'peak', 'off-peak', 'shoulder',
+        # Solar and green energy terms
+        'solar', 'feed-in', 'export', 'green power', 'renewable',
+        # Gas terms (for dual fuel bills)
+        'gas', 'mj', 'megajoule', 'natural gas', 'lpg'
+    ]
+    
+    # ENHANCED: More comprehensive Australian terms
+    australian_terms = [
+        'abn', 'gst', 'australia', 'australian',
+        'nsw', 'vic', 'qld', 'sa', 'wa', 'nt', 'tas', 'act',
+        'new south wales', 'victoria', 'queensland', 'south australia',
+        'western australia', 'northern territory', 'tasmania',
+        'sydney', 'melbourne', 'brisbane', 'perth', 'adelaide', 'darwin', 'hobart',
+        'nmi', 'mirn', 'distributor', 'retailer', 'aemo', 'aer'
+    ]
+    
+    # Count occurrences with detailed logging
+    energy_count = 0
+    found_energy_terms = []
+    for term in energy_terms:
+        if term in content_str:
+            energy_count += 1
+            found_energy_terms.append(term)
+    
+    australian_count = 0
+    found_australian_terms = []
+    for term in australian_terms:
+        if term in content_str:
+            australian_count += 1
+            found_australian_terms.append(term)
+    
+    # Enhanced company detection with variations
     detected_company = None
     for company in supported_companies:
-        if company.lower().replace(' ', '') in content_str.replace(' ', ''):
-            detected_company = company
+        company_variations = [
+            company.lower(),
+            company.lower().replace(' ', ''),
+            company.lower().replace('energy', '').strip(),
+            company.lower().replace('australia', '').strip()
+        ]
+        
+        # Add specific variations
+        if company.lower() == 'agl':
+            company_variations.extend(['agl energy', 'agl australia'])
+        elif 'origin' in company.lower():
+            company_variations.extend(['origin', 'origin australia'])
+        elif 'energy australia' in company.lower():
+            company_variations.extend(['energyaustralia', 'energy aust'])
+        
+        for variation in company_variations:
+            if variation and variation in content_str.replace(' ', ''):
+                detected_company = company
+                break
+        if detected_company:
             break
-
-    non_energy_terms = ['bank', 'mortgage', 'loan', 'insurance', 'phone', 'internet']
-    non_energy_count = sum(1 for term in non_energy_terms if term in content_str)
-
-    is_valid = (
-        energy_count >= 3 and
-        australian_count >= 1 and
-        non_energy_count < 3 and
-        (detected_company is not None or energy_count >= 5)
-    )
-
+    
+    # Check for non-energy indicators
+    non_energy_terms = [
+        'bank statement', 'mortgage', 'loan', 'insurance', 'phone bill',
+        'internet', 'mobile', 'credit card', 'medical', 'council rates'
+    ]
+    
+    non_energy_count = 0
+    found_non_energy_terms = []
+    for term in non_energy_terms:
+        if term in content_str:
+            non_energy_count += 1
+            found_non_energy_terms.append(term)
+    
+    # RELAXED VALIDATION LOGIC - More lenient criteria
+    is_valid = True
+    rejection_reasons = []
+    
+    # Rule 1: Must have some energy indicators (REDUCED threshold)
+    if energy_count < 2:  # Reduced from 3
+        is_valid = False
+        rejection_reasons.append(f"Insufficient energy-related content (found {energy_count}/2+ terms)")
+    
+    # Rule 2: Must have some Australian context OR a detected company
+    if australian_count < 1 and not detected_company:
+        is_valid = False
+        rejection_reasons.append("No Australian energy context found")
+    
+    # Rule 3: Too many non-energy indicators
+    if non_energy_count >= 2:  # Reduced from 3
+        is_valid = False
+        rejection_reasons.append(f"Appears to be non-energy document ({non_energy_count} non-energy indicators)")
+    
+    # Rule 4: OVERRIDE - If we detect a company and ANY energy term, approve it
+    if detected_company and energy_count >= 1:
+        is_valid = True
+        rejection_reasons = []
+        print(f"   ✅ OVERRIDE: Detected {detected_company} with {energy_count} energy terms")
+    
+    # Compile validation details
     validation_details = {
         "energy_indicators_found": energy_count,
+        "found_energy_terms": found_energy_terms[:8],
         "australian_energy_terms_found": australian_count,
+        "found_australian_terms": found_australian_terms[:5],
         "non_energy_indicators_found": non_energy_count,
+        "found_non_energy_terms": found_non_energy_terms,
         "recognized_energy_company": detected_company is not None,
-        "company_detected": detected_company
+        "company_detected": detected_company,
+        "rejection_reasons": rejection_reasons,
+        "validation_method": "enhanced_v2"
     }
-
+    
+    # Debug output
+    print(f"   Energy terms: {energy_count} - {found_energy_terms[:5]}")
+    print(f"   Australian terms: {australian_count} - {found_australian_terms[:3]}")
+    print(f"   Company detected: {detected_company}")
+    print(f"   Non-energy terms: {non_energy_count}")
+    print(f"   Result: {'✅ VALID' if is_valid else '❌ INVALID'}")
+    if rejection_reasons:
+        print(f"   Reasons: {', '.join(rejection_reasons)}")
+    
+    # Generate helpful tips
+    tips = []
     if not is_valid:
-        if non_energy_count >= 3:
-            validation_details["reason"] = f"Non-energy business document (found {non_energy_count} non-energy terms)"
-        elif energy_count < 3:
-            validation_details["reason"] = f"Insufficient energy-related content (found {energy_count}/3+ terms)"
-        elif australian_count < 1:
-            validation_details["reason"] = "No Australian energy market indicators found"
-        else:
-            validation_details["reason"] = "Document classification uncertain"
-
+        if energy_count < 2:
+            tips.extend([
+                "Ensure the document contains energy usage information (kWh, electricity, etc.)",
+                "Make sure all pages of a multi-page bill are included",
+                "Try uploading a clearer image or the original PDF"
+            ])
+        
+        if australian_count < 1 and not detected_company:
+            tips.extend([
+                "Ensure the bill is from an Australian energy retailer",
+                "Check that company branding or Australian details are visible"
+            ])
+        
+        if non_energy_count >= 2:
+            tips.extend([
+                "This appears to be a different type of utility bill",
+                "Please upload specifically an electricity or gas bill"
+            ])
+    
     return {
         "is_valid": is_valid,
         "validation_details": validation_details,
         "company_detected": detected_company,
-        "tips": [
-            "Ensure the document is a complete electricity bill",
-            "Make sure the bill is from an Australian energy retailer",
-            "Try uploading a clearer image or the original PDF",
-            "Check that all pages of a multi-page bill are included"
-        ] if not is_valid else None,
+        "tips": tips if not is_valid else None,
         "supported_companies": supported_companies[:10] if not is_valid else None
     }
 
