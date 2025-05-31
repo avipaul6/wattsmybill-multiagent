@@ -1,4 +1,6 @@
-// src/App.js - Enhanced version with proper validation and GitHub link
+// src/App.js - Complete WattsMyBill App with Google Cloud ADK Integration
+// PART 1: Imports and Styles
+
 import React, { useState, useRef, useEffect } from 'react';
 import axios from 'axios';
 
@@ -54,6 +56,24 @@ const styles = {
     color: '#6b7280',
     margin: 0
   },
+  adkBadge: {
+    display: 'flex',
+    alignItems: 'center',
+    gap: '0.5rem',
+    padding: '0.5rem 1rem',
+    borderRadius: '0.75rem',
+    fontSize: '0.875rem',
+    fontWeight: '600',
+    transition: 'all 0.3s ease'
+  },
+  adkActive: {
+    background: 'linear-gradient(135deg, #10b981, #059669)',
+    color: 'white'
+  },
+  adkInactive: {
+    background: '#f3f4f6',
+    color: '#6b7280'
+  },
   githubLink: {
     display: 'flex',
     alignItems: 'center',
@@ -91,6 +111,19 @@ const styles = {
     maxWidth: '32rem',
     marginLeft: 'auto',
     marginRight: 'auto'
+  },
+  adkStatusCard: {
+    background: 'white',
+    border: '2px solid #e5e7eb',
+    borderRadius: '1rem',
+    padding: '1.5rem',
+    margin: '2rem auto',
+    maxWidth: '48rem',
+    textAlign: 'center'
+  },
+  adkStatusActive: {
+    borderColor: '#10b981',
+    background: '#f0fdf4'
   },
   uploadArea: {
     background: 'white',
@@ -216,6 +249,10 @@ const styles = {
     fontSize: '1rem',
     width: '100%'
   },
+  adkButton: {
+    background: 'linear-gradient(135deg, #10b981, #059669)',
+    color: 'white'
+  },
   error: {
     background: '#fef2f2',
     border: '1px solid #fca5a5',
@@ -244,6 +281,8 @@ const styles = {
   }
 };
 
+// PART 2: Component State and Setup
+
 const WattsMyBillApp = () => {
   const [file, setFile] = useState(null);
   const [currentStep, setCurrentStep] = useState(0);
@@ -252,6 +291,9 @@ const WattsMyBillApp = () => {
   const [error, setError] = useState(null);
   const [supportedCompanies, setSupportedCompanies] = useState([]);
   const [companyDetected, setCompanyDetected] = useState(null);
+  const [adkStatus, setAdkStatus] = useState(null);
+  const [useAdk, setUseAdk] = useState(true);
+  const [processingMethod, setProcessingMethod] = useState(null);
   const fileInputRef = useRef(null);
 
   const steps = [
@@ -262,18 +304,39 @@ const WattsMyBillApp = () => {
     { id: 'summary', label: 'Savings Summary', icon: '✅' }
   ];
 
-  // Fetch supported companies on component mount
+  const adkSteps = [
+    { id: 'adk_init', label: 'ADK Coordination', icon: '🤖' },
+    { id: 'real_bill', label: 'Real Bill Agent', icon: '🔍' },
+    { id: 'real_market', label: 'Real Market Agent', icon: '📊' },
+    { id: 'real_rebates', label: 'Real Rebate Agent', icon: '🎯' },
+    { id: 'real_usage', label: 'Real Usage Agent', icon: '⚡' },
+    { id: 'synthesis', label: 'ADK Synthesis', icon: '✅' }
+  ];
+
+  // Fetch supported companies and ADK status on component mount
   useEffect(() => {
-    const fetchSupportedCompanies = async () => {
+    const fetchData = async () => {
       try {
-        const response = await axios.get(`${API_BASE_URL}/supported-companies`);
-        setSupportedCompanies(response.data.supported_companies);
+        // Fetch supported companies
+        const companiesResponse = await axios.get(`${API_BASE_URL}/supported-companies`);
+        setSupportedCompanies(companiesResponse.data.supported_companies);
+
+        // Fetch ADK status
+        const adkResponse = await axios.get(`${API_BASE_URL}/adk-status`);
+        setAdkStatus(adkResponse.data);
+        
+        // Set default ADK usage based on availability
+        if (adkResponse.data.adk_integration?.workflow_ready) {
+          setUseAdk(true);
+        } else {
+          setUseAdk(false);
+        }
       } catch (err) {
-        console.warn('Could not fetch supported companies');
+        console.warn('Could not fetch initialization data:', err);
       }
     };
     
-    fetchSupportedCompanies();
+    fetchData();
   }, []);
 
   const handleFileUpload = async (event) => {
@@ -289,17 +352,26 @@ const WattsMyBillApp = () => {
     setIsAnalyzing(true);
     setCurrentStep(0);
     setCompanyDetected(null);
+    setProcessingMethod(null);
     
     try {
       const formData = new FormData();
       formData.append('file', uploadedFile);
       formData.append('state', 'QLD');
+      formData.append('use_adk', useAdk.toString());
 
       const response = await axios.post(`${API_BASE_URL}/upload-bill`, formData, {
         headers: { 'Content-Type': 'multipart/form-data' },
       });
 
-      const { analysis_id } = response.data;
+      const { analysis_id, processing_method, adk_available } = response.data;
+      setProcessingMethod(processing_method);
+      
+      // Update ADK availability if changed
+      if (!adk_available && useAdk) {
+        setUseAdk(false);
+      }
+      
       pollProgress(analysis_id);
       
     } catch (err) {
@@ -334,13 +406,15 @@ const WattsMyBillApp = () => {
           setCompanyDetected(company_detected);
         }
         
-        setCurrentStep(Math.floor((progress / 100) * steps.length));
+        // Different step calculation based on processing method
+        const currentSteps = processingMethod === 'adk_integrated' ? adkSteps : steps;
+        setCurrentStep(Math.floor((progress / 100) * currentSteps.length));
         
         if (status === 'completed') {
           const resultsResponse = await axios.get(`${API_BASE_URL}/analysis/${id}/results`);
           setResults(resultsResponse.data);
           setIsAnalyzing(false);
-          setCurrentStep(steps.length);
+          setCurrentStep(currentSteps.length);
         } else if (status === 'failed') {
           setError({ message: 'Analysis failed' });
           setIsAnalyzing(false);
@@ -363,6 +437,7 @@ const WattsMyBillApp = () => {
     setResults(null);
     setError(null);
     setCompanyDetected(null);
+    setProcessingMethod(null);
   };
 
   const formatCurrency = (amount) => {
@@ -390,6 +465,97 @@ const WattsMyBillApp = () => {
     };
   };
 
+// PART 3: Render Helper Functions
+
+  const renderAdkStatus = () => {
+    if (!adkStatus) return null;
+
+    const isAdkReady = adkStatus.adk_integration?.workflow_ready;
+    const realAgentsUsed = adkStatus.adk_integration?.real_agents_used;
+    const apiIntegration = adkStatus.adk_integration?.api_integration;
+
+    return (
+      <div style={{
+        ...styles.adkStatusCard,
+        ...(isAdkReady ? styles.adkStatusActive : {})
+      }}>
+        <h3 style={{margin: '0 0 1rem 0', fontSize: '1.25rem', fontWeight: '700'}}>
+          🤖 Google Cloud ADK Integration Status
+        </h3>
+        
+        <div style={{display: 'flex', justifyContent: 'center', gap: '2rem', marginBottom: '1rem'}}>
+          <div>
+            <div style={{fontWeight: '600', color: isAdkReady ? '#059669' : '#dc2626'}}>
+              {isAdkReady ? '✅ Active' : '❌ Inactive'}
+            </div>
+            <div style={{fontSize: '0.875rem', color: '#6b7280'}}>ADK Workflow</div>
+          </div>
+          
+          {isAdkReady && (
+            <>
+              <div>
+                <div style={{fontWeight: '600', color: realAgentsUsed ? '#059669' : '#f59e0b'}}>
+                  {realAgentsUsed ? '🎯 Real Agents' : '🔧 Mock Agents'}
+                </div>
+                <div style={{fontSize: '0.875rem', color: '#6b7280'}}>Agent Type</div>
+              </div>
+              
+              <div>
+                <div style={{fontWeight: '600', color: apiIntegration ? '#059669' : '#f59e0b'}}>
+                  {apiIntegration ? '🌐 Live API' : '📊 Fallback'}
+                </div>
+                <div style={{fontSize: '0.875rem', color: '#6b7280'}}>Data Source</div>
+              </div>
+            </>
+          )}
+        </div>
+
+        {isAdkReady && (
+          <div style={{fontSize: '0.875rem', color: '#6b7280'}}>
+            ADK Agents: {adkStatus.adk_integration?.agent_count || 0} | 
+            Market Plans: {adkStatus.adk_integration?.market_plans_available || 0} | 
+            ETL: {adkStatus.adk_integration?.etl_status ? 'Connected' : 'Unavailable'}
+          </div>
+        )}
+
+        {!isAdkReady && (
+          <div style={{fontSize: '0.875rem', color: '#dc2626', marginTop: '0.5rem'}}>
+            {adkStatus.adk_integration?.reason || 'ADK integration not available'}
+          </div>
+        )}
+      </div>
+    );
+  };
+
+  const renderProcessingMethod = () => {
+    if (!processingMethod) return null;
+
+    const isAdk = processingMethod === 'adk_integrated';
+    
+    return (
+      <div style={{
+        background: isAdk ? '#f0fdf4' : '#f8fafc',
+        border: `1px solid ${isAdk ? '#16a34a' : '#e2e8f0'}`,
+        borderRadius: '0.75rem',
+        padding: '1rem',
+        margin: '1rem 0',
+        textAlign: 'center'
+      }}>
+        <div style={{fontWeight: '600', color: isAdk ? '#166534' : '#374151'}}>
+          {isAdk ? '🤖 ADK-Integrated Processing' : '🔧 Standalone Processing'}
+        </div>
+        <div style={{fontSize: '0.875rem', color: '#6b7280', marginTop: '0.25rem'}}>
+          {isAdk 
+            ? 'Using Google Cloud ADK with real WattsMyBill agents'
+            : 'Using standalone agent processing'
+          }
+        </div>
+      </div>
+    );
+  };
+
+  // PART 4: Main JSX Return Structure
+
   return (
     <div style={styles.container}>
       {/* Header */}
@@ -399,9 +565,23 @@ const WattsMyBillApp = () => {
             <div style={styles.logoIcon}>⚡</div>
             <div>
               <h1 style={styles.title}>WattsMyBill</h1>
-              <p style={styles.subtitle}>AI Energy Analysis</p>
+              <p style={styles.subtitle}>AI Energy Analysis with Google Cloud ADK</p>
             </div>
           </div>
+          
+          {/* ADK Status Badge */}
+          {adkStatus && (
+            <div style={{
+              ...styles.adkBadge,
+              ...(adkStatus.adk_integration?.workflow_ready ? styles.adkActive : styles.adkInactive)
+            }}>
+              <span>🤖</span>
+              <span>
+                ADK {adkStatus.adk_integration?.workflow_ready ? 'Active' : 'Inactive'}
+              </span>
+            </div>
+          )}
+          
           <a 
             href="https://github.com/avipaul6/wattsmybill-multiagent" 
             target="_blank" 
@@ -432,8 +612,50 @@ const WattsMyBillApp = () => {
             <span style={styles.heroGradientText}>With Your Energy Bill?</span>
           </h2>
           <p style={styles.heroSubtitle}>
-            Let real AI agents analyze your Australian energy bill and save you money.
+            Let real AI agents powered by Google Cloud ADK analyze your Australian energy bill and save you money.
           </p>
+
+          {/* ADK Status Card */}
+          {renderAdkStatus()}
+
+          {/* Processing Method Display */}
+          {renderProcessingMethod()}
+
+          {/* ADK Toggle (when available) */}
+          {adkStatus?.adk_integration?.workflow_ready && (
+            <div style={{
+              background: 'white',
+              border: '1px solid #e5e7eb',
+              borderRadius: '1rem',
+              padding: '1.5rem',
+              margin: '2rem auto',
+              maxWidth: '32rem'
+            }}>
+              <h4 style={{margin: '0 0 1rem 0', fontSize: '1rem', fontWeight: '600'}}>
+                🔧 Analysis Method
+              </h4>
+              <div style={{display: 'flex', gap: '1rem', alignItems: 'center'}}>
+                <label style={{display: 'flex', alignItems: 'center', gap: '0.5rem', cursor: 'pointer'}}>
+                  <input
+                    type="checkbox"
+                    checked={useAdk}
+                    onChange={(e) => setUseAdk(e.target.checked)}
+                    disabled={isAnalyzing}
+                    style={{width: '1.25rem', height: '1.25rem'}}
+                  />
+                  <span style={{fontWeight: '500'}}>
+                    Use Google Cloud ADK with Real Agents
+                  </span>
+                </label>
+              </div>
+              <div style={{fontSize: '0.875rem', color: '#6b7280', marginTop: '0.5rem'}}>
+                {useAdk 
+                  ? '🤖 Will use ADK-orchestrated real agents for comprehensive analysis'
+                  : '🔧 Will use standalone agent processing (fallback mode)'
+                }
+              </div>
+            </div>
+          )}
 
           {/* Company Detection */}
           {companyDetected && (
@@ -460,6 +682,9 @@ const WattsMyBillApp = () => {
               ⚠️ Document uploaded - proceeding with analysis (energy company not clearly detected)
             </div>
           )}
+
+
+{/* PART 5: Error Handling and Upload Area */}
 
           {/* Error Display */}
           {error && (
@@ -538,8 +763,8 @@ const WattsMyBillApp = () => {
             onClick={() => fileInputRef.current?.click()}
             onMouseEnter={(e) => {
               if (!file) {
-                e.target.style.borderColor = '#3b82f6';
-                e.target.style.background = '#f8faff';
+                e.target.style.borderColor = useAdk ? '#10b981' : '#3b82f6';
+                e.target.style.background = useAdk ? '#f0fdf4' : '#f8faff';
                 e.target.style.transform = 'translateY(-2px)';
               }
             }}
@@ -559,14 +784,17 @@ const WattsMyBillApp = () => {
             />
             
             <div style={styles.uploadIcon}>
-              {file ? '✅' : '📤'}
+              {file ? '✅' : (useAdk ? '🤖' : '📤')}
             </div>
             
             <h3 style={{fontSize: '1.25rem', fontWeight: '600', marginBottom: '0.5rem'}}>
               {file ? file.name : 'Upload your Australian energy bill'}
             </h3>
             <p style={{color: '#6b7280', margin: 0}}>
-              {file ? 'Ready to analyze!' : 'PDF or image files supported'}
+              {file 
+                ? `Ready for ${useAdk ? 'ADK' : 'standalone'} analysis!` 
+                : 'PDF or image files supported'
+              }
             </p>
           </div>
 
@@ -610,12 +838,16 @@ const WattsMyBillApp = () => {
           )}
         </div>
 
+{/* PART 6: Progress Display */}
+
         {/* Progress Steps */}
         {(isAnalyzing || results) && (
           <div style={styles.progressContainer}>
-            <h3 style={{textAlign: 'center', marginBottom: '2rem'}}>Analysis Progress</h3>
+            <h3 style={{textAlign: 'center', marginBottom: '2rem'}}>
+              {processingMethod === 'adk_integrated' ? '🤖 ADK Analysis Progress' : '🔧 Analysis Progress'}
+            </h3>
             <div style={styles.progressSteps}>
-              {steps.map((step, index) => {
+              {(processingMethod === 'adk_integrated' ? adkSteps : steps).map((step, index) => {
                 const isCompleted = currentStep > index;
                 const isCurrent = currentStep === index && isAnalyzing;
                 
@@ -640,12 +872,80 @@ const WattsMyBillApp = () => {
                 );
               })}
             </div>
+            
+            {processingMethod === 'adk_integrated' && (
+              <div style={{
+                textAlign: 'center',
+                fontSize: '0.875rem',
+                color: '#059669',
+                marginTop: '1rem',
+                fontWeight: '500'
+              }}>
+                🤖 Powered by Google Cloud ADK with Real WattsMyBill Agents
+              </div>
+            )}
           </div>
         )}
+
+ {/* PART 7: Results Header and Bill Analysis */}
 
         {/* Results Cards */}
         {results && (
           <>
+            {/* Processing Method Success Banner */}
+            <div style={{
+              background: results.processing_method === 'adk_integrated' ? '#f0fdf4' : '#f8fafc',
+              border: `2px solid ${results.processing_method === 'adk_integrated' ? '#10b981' : '#3b82f6'}`,
+              borderRadius: '1rem',
+              padding: '1.5rem',
+              margin: '2rem 0',
+              textAlign: 'center'
+            }}>
+              <h3 style={{
+                margin: '0 0 0.5rem 0',
+                color: results.processing_method === 'adk_integrated' ? '#059669' : '#1d4ed8',
+                fontWeight: '700'
+              }}>
+                {results.processing_method === 'adk_integrated' ? '🤖 ADK Analysis Complete!' : '🔧 Standalone Analysis Complete!'}
+              </h3>
+              <p style={{margin: 0, color: '#6b7280'}}>
+                {results.processing_method === 'adk_integrated' 
+                  ? 'Analysis completed using Google Cloud ADK with real WattsMyBill agents'
+                  : 'Analysis completed using standalone agent processing'
+                }
+              </p>
+              
+              {/* ADK Metadata Display */}
+              {results.adk_metadata && (
+                <div style={{
+                  display: 'flex',
+                  justifyContent: 'center',
+                  gap: '2rem',
+                  marginTop: '1rem',
+                  fontSize: '0.875rem'
+                }}>
+                  <div>
+                    <span style={{fontWeight: '600'}}>Real Agents: </span>
+                    <span style={{color: results.adk_metadata.real_agents_used ? '#059669' : '#f59e0b'}}>
+                      {results.adk_metadata.real_agents_used ? '✅ Yes' : '⚠️ Mock'}
+                    </span>
+                  </div>
+                  <div>
+                    <span style={{fontWeight: '600'}}>Live API: </span>
+                    <span style={{color: results.adk_metadata.api_integration ? '#059669' : '#f59e0b'}}>
+                      {results.adk_metadata.api_integration ? '✅ Connected' : '📊 Fallback'}
+                    </span>
+                  </div>
+                  <div>
+                    <span style={{fontWeight: '600'}}>ETL: </span>
+                    <span style={{color: results.adk_metadata.etl_status ? '#059669' : '#6b7280'}}>
+                      {results.adk_metadata.etl_status ? '✅ Active' : '❌ Unavailable'}
+                    </span>
+                  </div>
+                </div>
+              )}
+            </div>
+
             {/* Billing Context Information */}
             {results.billing_context && (
               <div style={styles.billingContext}>
@@ -658,17 +958,37 @@ const WattsMyBillApp = () => {
               <div style={styles.resultCard}>
                 <div style={styles.cardHeader}>
                   <div style={{...styles.cardIcon, background: '#dbeafe'}}>📊</div>
-                  <h3 style={styles.cardTitle}>Bill Analysis</h3>
+                  <h3 style={styles.cardTitle}>
+                    Bill Analysis
+                    {results.processing_method === 'adk_integrated' && (
+                      <span style={{fontSize: '0.75rem', color: '#059669', marginLeft: '0.5rem'}}>
+                        🤖 ADK
+                      </span>
+                    )}
+                  </h3>
                 </div>
                 
                 {(() => {
                   const billing = getBillingPeriodText(results);
-                  const billData = results.bill_analysis?.cost_breakdown || {};
-                  const usageData = results.bill_analysis?.usage_profile || {};
                   
-                  const quarterlyCost = billData.quarterly_cost || billData.total_cost || 712.5;
-                  const quarterlyUsage = usageData.quarterly_kwh || usageData.total_kwh || 2060;
-                  const efficiencyScore = results.bill_analysis?.efficiency_score || 72;
+                  // Handle both ADK and standalone result structures
+                  let billData, usageData, efficiencyScore;
+                  
+                  if (results.processing_method === 'adk_integrated') {
+                    // ADK structure
+                    const analysis = results.bill_analysis?.analysis;
+                    billData = analysis?.cost_breakdown || {};
+                    usageData = analysis?.usage_profile || {};
+                    efficiencyScore = analysis?.efficiency_score || 72;
+                  } else {
+                    // Standalone structure  
+                    billData = results.bill_analysis?.analysis?.bill_data || {};
+                    usageData = results.bill_analysis?.analysis?.usage_profile || {};
+                    efficiencyScore = results.bill_analysis?.analysis?.efficiency_score || 72;
+                  }
+                  
+                  const quarterlyCost = billData.quarterly_cost || billData.total_cost || billData.total_amount || 712.5;
+                  const quarterlyUsage = usageData.quarterly_kwh || usageData.total_kwh || usageData.usage_kwh || 2060;
                   
                   return (
                     <>
@@ -725,81 +1045,122 @@ const WattsMyBillApp = () => {
                           }}></div>
                         </div>
                       </div>
+                      
+                      {/* ADK Data Source Indicator */}
+                      {results.processing_method === 'adk_integrated' && (
+                        <div style={{
+                          marginTop: '1rem',
+                          fontSize: '0.75rem',
+                          color: '#059669',
+                          textAlign: 'center'
+                        }}>
+                          🤖 Analyzed by Real BillAnalyzerAgent via ADK
+                        </div>
+                      )}
                     </>
                   );
                 })()}
               </div>
 
-              {/* Solar Analysis (if applicable) */}
-              {results.bill_analysis?.solar_analysis?.has_solar && (
-                <div style={styles.resultCard}>
-                  <div style={styles.cardHeader}>
-                    <div style={{...styles.cardIcon, background: '#fef3c7'}}>☀️</div>
-                    <h3 style={styles.cardTitle}>Solar System Analysis</h3>
-                  </div>
-                  
-                  {(() => {
-                    const solar = results.bill_analysis.solar_analysis;
-                    
-                    return (
-                      <>
-                        <div style={{display: 'flex', justifyContent: 'space-between', marginBottom: '1rem'}}>
-                          <span>Solar Export</span>
-                          <strong>{solar.solar_export_kwh || 0} kWh</strong>
-                        </div>
-                        <div style={{display: 'flex', justifyContent: 'space-between', marginBottom: '1rem'}}>
-                          <span>Export Ratio</span>
-                          <strong>{solar.export_ratio_percent || 0}%</strong>
-                        </div>
-                        <div style={{display: 'flex', justifyContent: 'space-between', marginBottom: '1rem'}}>
-                          <span>Solar Credit</span>
-                          <strong style={{color: '#16a34a'}}>
-                            {formatCurrency(solar.solar_credit_amount || 0)}
-                          </strong>
-                        </div>
-                        <div style={{display: 'flex', justifyContent: 'space-between', marginBottom: '1rem'}}>
-                          <span>Performance</span>
-                          <strong style={{
-                            color: solar.performance_rating === 'excellent' ? '#16a34a' : 
-                                  solar.performance_rating === 'good' ? '#f59e0b' : '#6b7280'
-                          }}>
-                            {(solar.performance_rating || 'good').charAt(0).toUpperCase() + (solar.performance_rating || 'good').slice(1)}
-                          </strong>
-                        </div>
-                        
-                        {solar.battery_recommendation && (
-                          <div style={{
-                            background: '#f0f9ff',
-                            border: '1px solid #3b82f6',
-                            borderRadius: '0.5rem',
-                            padding: '0.75rem',
-                            fontSize: '0.875rem',
-                            color: '#1e40af'
-                          }}>
-                            💡 <strong>Battery Recommendation:</strong> Your high solar export suggests a battery system could maximize your savings.
-                          </div>
-                        )}
-                        
-                        <div style={{marginTop: '1rem', fontSize: '0.875rem', color: '#6b7280'}}>
-                          {solar.performance_note || 'Your solar system is contributing to your energy savings.'}
-                        </div>
-                      </>
-                    );
-                  })()}
-                </div>
-              )}
+      {/* PART 8: Solar Analysis and Better Plan Cards */}
 
-              {/* Better Plan */}
+              {/* Solar Analysis (enhanced for ADK) */}
+              {(() => {
+                let solarAnalysis;
+                
+                if (results.processing_method === 'adk_integrated') {
+                  solarAnalysis = results.bill_analysis?.analysis?.solar_analysis;
+                } else {
+                  solarAnalysis = results.bill_analysis?.analysis?.solar_analysis;
+                }
+                
+                return solarAnalysis?.has_solar && (
+                  <div style={styles.resultCard}>
+                    <div style={styles.cardHeader}>
+                      <div style={{...styles.cardIcon, background: '#fef3c7'}}>☀️</div>
+                      <h3 style={styles.cardTitle}>
+                        Solar System Analysis
+                        {results.processing_method === 'adk_integrated' && (
+                          <span style={{fontSize: '0.75rem', color: '#059669', marginLeft: '0.5rem'}}>
+                            🤖 ADK
+                          </span>
+                        )}
+                      </h3>
+                    </div>
+                    
+                    <>
+                      <div style={{display: 'flex', justifyContent: 'space-between', marginBottom: '1rem'}}>
+                        <span>Solar Export</span>
+                        <strong>{solarAnalysis.solar_export_kwh || 0} kWh</strong>
+                      </div>
+                      <div style={{display: 'flex', justifyContent: 'space-between', marginBottom: '1rem'}}>
+                        <span>Export Ratio</span>
+                        <strong>{solarAnalysis.export_ratio_percent || 0}%</strong>
+                      </div>
+                      <div style={{display: 'flex', justifyContent: 'space-between', marginBottom: '1rem'}}>
+                        <span>Solar Credit</span>
+                        <strong style={{color: '#16a34a'}}>
+                          {formatCurrency(solarAnalysis.solar_credit_amount || 0)}
+                        </strong>
+                      </div>
+                      <div style={{display: 'flex', justifyContent: 'space-between', marginBottom: '1rem'}}>
+                        <span>Performance</span>
+                        <strong style={{
+                          color: solarAnalysis.performance_rating === 'excellent' ? '#16a34a' : 
+                                solarAnalysis.performance_rating === 'good' ? '#f59e0b' : '#6b7280'
+                        }}>
+                          {(solarAnalysis.performance_rating || 'good').charAt(0).toUpperCase() + (solarAnalysis.performance_rating || 'good').slice(1)}
+                        </strong>
+                      </div>
+                      
+                      {solarAnalysis.battery_recommendation && (
+                        <div style={{
+                          background: '#f0f9ff',
+                          border: '1px solid #3b82f6',
+                          borderRadius: '0.5rem',
+                          padding: '0.75rem',
+                          fontSize: '0.875rem',
+                          color: '#1e40af'
+                        }}>
+                          💡 <strong>Battery Recommendation:</strong> Your high solar export suggests a battery system could maximize your savings.
+                        </div>
+                      )}
+                      
+                      <div style={{marginTop: '1rem', fontSize: '0.875rem', color: '#6b7280'}}>
+                        {solarAnalysis.performance_note || 'Your solar system is contributing to your energy savings.'}
+                      </div>
+                    </>
+                  </div>
+                );
+              })()}
+
+              {/* Better Plan (enhanced for ADK) */}
               <div style={styles.resultCard}>
                 <div style={styles.cardHeader}>
                   <div style={{...styles.cardIcon, background: '#dcfce7'}}>📈</div>
-                  <h3 style={styles.cardTitle}>Better Plan Available</h3>
+                  <h3 style={styles.cardTitle}>
+                    Better Plan Available
+                    {results.processing_method === 'adk_integrated' && (
+                      <span style={{fontSize: '0.75rem', color: '#059669', marginLeft: '0.5rem'}}>
+                        🤖 ADK
+                      </span>
+                    )}
+                  </h3>
                 </div>
                 
                 {(() => {
                   const billing = getBillingPeriodText(results);
-                  const bestPlan = results.market_research?.best_plan || {};
-                  const quarterlySavings = bestPlan.quarterly_savings || bestPlan.annual_savings / 4 || 105;
+                  
+                  // Handle both ADK and standalone structures
+                  let bestPlan;
+                  
+                  if (results.processing_method === 'adk_integrated') {
+                    bestPlan = results.market_research?.market_research?.best_plan || {};
+                  } else {
+                    bestPlan = results.market_research?.market_research?.best_plan || {};
+                  }
+                  
+                  const quarterlySavings = bestPlan.quarterly_savings || (bestPlan.annual_savings / 4) || 105;
                   
                   return (
                     <>
@@ -836,7 +1197,24 @@ const WattsMyBillApp = () => {
                         </div>
                       )}
                       
-                      <button style={{...styles.button, background: 'linear-gradient(135deg, #16a34a, #15803d)'}}>
+                      {/* ADK Data Source Info */}
+                      {results.processing_method === 'adk_integrated' && results.market_research?.api_used && (
+                        <div style={{
+                          fontSize: '0.75rem',
+                          color: '#059669',
+                          marginBottom: '1rem',
+                          textAlign: 'center'
+                        }}>
+                          🌐 Data from: {results.market_research.api_used}
+                        </div>
+                      )}
+                      
+                      <button style={{
+                        ...styles.button, 
+                        background: results.processing_method === 'adk_integrated' 
+                          ? 'linear-gradient(135deg, #10b981, #059669)'
+                          : 'linear-gradient(135deg, #16a34a, #15803d)'
+                      }}>
                         Switch Plan →
                       </button>
                     </>
@@ -844,53 +1222,39 @@ const WattsMyBillApp = () => {
                 })()}
               </div>
 
-              {/* Usage Recommendations */}
-              {results.bill_analysis?.recommendations && results.bill_analysis.recommendations.length > 0 && (
-                <div style={styles.resultCard}>
-                  <div style={styles.cardHeader}>
-                    <div style={{...styles.cardIcon, background: '#e0f2fe'}}>💡</div>
-                    <h3 style={styles.cardTitle}>Energy Saving Tips</h3>
-                  </div>
-                  
-                  <div style={{fontSize: '0.875rem'}}>
-                    {results.bill_analysis.recommendations.slice(0, 3).map((rec, index) => (
-                      <div key={index} style={{
-                        padding: '0.75rem',
-                        background: '#f8fafc',
-                        borderRadius: '0.5rem',
-                        marginBottom: '0.75rem',
-                        borderLeft: '3px solid #3b82f6'
-                      }}>
-                        {rec}
-                      </div>
-                    ))}
-                    
-                    {results.bill_analysis.recommendations.length > 3 && (
-                      <div style={{
-                        textAlign: 'center',
-                        color: '#6b7280',
-                        fontSize: '0.75rem',
-                        marginTop: '0.5rem'
-                      }}>
-                        +{results.bill_analysis.recommendations.length - 3} more recommendations available
-                      </div>
-                    )}
-                  </div>
-                </div>
-              )}
+ {/* PART 9: Total Savings and Rebates Cards */}
 
-              {/* Total Savings Potential */}
+              {/* Total Savings Potential (enhanced for ADK) */}
               <div style={styles.resultCard}>
                 <div style={styles.cardHeader}>
                   <div style={{...styles.cardIcon, background: '#f3e8ff'}}>💎</div>
-                  <h3 style={styles.cardTitle}>Total Savings Potential</h3>
+                  <h3 style={styles.cardTitle}>
+                    Total Savings Potential
+                    {results.processing_method === 'adk_integrated' && (
+                      <span style={{fontSize: '0.75rem', color: '#059669', marginLeft: '0.5rem'}}>
+                        🤖 ADK
+                      </span>
+                    )}
+                  </h3>
                 </div>
                 
                 {(() => {
                   const billing = getBillingPeriodText(results);
                   const totalSavings = results.total_savings || 248;
-                  const marketSavings = results.market_research?.savings_analysis?.max_annual_savings || 0;
-                  const rebateSavings = results.rebate_analysis?.total_rebate_value || 0;
+                  
+                  // Enhanced savings breakdown for ADK
+                  let marketSavings = 0;
+                  let rebateSavings = 0;
+                  let usageSavings = 0;
+                  
+                  if (results.processing_method === 'adk_integrated') {
+                    marketSavings = results.market_research?.market_research?.savings_analysis?.max_annual_savings || 0;
+                    rebateSavings = results.rebate_analysis?.total_rebate_value || 0;
+                    usageSavings = results.usage_optimization?.total_annual_savings || 0;
+                  } else {
+                    marketSavings = results.market_research?.market_research?.savings_analysis?.max_annual_savings || 0;
+                    rebateSavings = results.rebate_analysis?.total_rebate_value || 0;
+                  }
                   
                   return (
                     <div style={{textAlign: 'center'}}>
@@ -901,7 +1265,7 @@ const WattsMyBillApp = () => {
                         {formatCurrency(totalSavings * billing.multiplier)} / year
                       </div>
                       
-                      {/* Savings Breakdown */}
+                      {/* Enhanced Savings Breakdown for ADK */}
                       <div style={{fontSize: '0.875rem', textAlign: 'left'}}>
                         {marketSavings > 0 && (
                           <div style={{display: 'flex', justifyContent: 'space-between', marginBottom: '0.5rem'}}>
@@ -915,6 +1279,12 @@ const WattsMyBillApp = () => {
                             <span style={{color: '#ea580c'}}>{formatCurrency(rebateSavings)}</span>
                           </div>
                         )}
+                        {usageSavings > 0 && results.processing_method === 'adk_integrated' && (
+                          <div style={{display: 'flex', justifyContent: 'space-between', marginBottom: '0.5rem'}}>
+                            <span>Usage optimization:</span>
+                            <span style={{color: '#8b5cf6'}}>{formatCurrency(usageSavings)}/year</span>
+                          </div>
+                        )}
                         <div style={{
                           borderTop: '1px solid #e5e7eb',
                           paddingTop: '0.5rem',
@@ -923,25 +1293,52 @@ const WattsMyBillApp = () => {
                           fontWeight: '600'
                         }}>
                           <span>Total potential:</span>
-                          <span style={{color: '#8b5cf6'}}>{formatCurrency(marketSavings + rebateSavings)}/year</span>
+                          <span style={{color: '#8b5cf6'}}>{formatCurrency((marketSavings + rebateSavings + usageSavings) || totalSavings * billing.multiplier)}/year</span>
                         </div>
                       </div>
+                      
+                      {/* ADK Analysis Badge */}
+                      {results.processing_method === 'adk_integrated' && (
+                        <div style={{
+                          marginTop: '1rem',
+                          fontSize: '0.75rem',
+                          color: '#059669',
+                          fontWeight: '500'
+                        }}>
+                          🤖 Comprehensive analysis by ADK-coordinated real agents
+                        </div>
+                      )}
                     </div>
                   );
                 })()}
               </div>
 
-              {/* Government Rebates */}
+             {/* Government Rebates (enhanced for ADK) */}
               <div style={styles.resultCard}>
                 <div style={styles.cardHeader}>
                   <div style={{...styles.cardIcon, background: '#fed7aa'}}>🎯</div>
-                  <h3 style={styles.cardTitle}>Government Rebates</h3>
+                  <h3 style={styles.cardTitle}>
+                    Government Rebates
+                    {results.processing_method === 'adk_integrated' && (
+                      <span style={{fontSize: '0.75rem', color: '#059669', marginLeft: '0.5rem'}}>
+                        🤖 ADK
+                      </span>
+                    )}
+                  </h3>
                 </div>
                 
                 {(() => {
-                  const rebateValue = results.rebate_analysis?.total_rebate_value || 572;
-                  const rebateCount = results.rebate_analysis?.rebate_count || 3;
-                  const rebates = results.rebate_analysis?.applicable_rebates || [];
+                  let rebateAnalysis;
+                  
+                  if (results.processing_method === 'adk_integrated') {
+                    rebateAnalysis = results.rebate_analysis;
+                  } else {
+                    rebateAnalysis = results.rebate_analysis;
+                  }
+                  
+                  const rebateValue = rebateAnalysis?.total_rebate_value || 572;
+                  const rebateCount = rebateAnalysis?.rebate_count || 3;
+                  const rebates = rebateAnalysis?.applicable_rebates || [];
                   
                   return (
                     <>
@@ -956,13 +1353,13 @@ const WattsMyBillApp = () => {
                         <strong>{rebateCount} rebates</strong>
                       </div>
                       
-                      {/* Rebate Details */}
+                      {/* Enhanced Rebate Details for ADK */}
                       {rebates.length > 0 && (
                         <div style={{marginBottom: '1rem'}}>
                           <h5 style={{margin: '0 0 0.5rem 0', fontSize: '0.875rem', fontWeight: '600'}}>
                             Available Programs:
                           </h5>
-                          {rebates.map((rebate, index) => (
+                          {rebates.slice(0, 3).map((rebate, index) => (
                             <div key={index} style={{
                               fontSize: '0.75rem',
                               padding: '0.5rem',
@@ -984,78 +1381,35 @@ const WattsMyBillApp = () => {
                       <div style={{fontSize: '0.875rem', color: '#6b7280', marginBottom: '1rem'}}>
                         Mix of one-time rebates and ongoing credits
                       </div>
-                      <button style={{...styles.button, background: 'linear-gradient(135deg, #ea580c, #c2410c)'}}>
+                      
+                      {/* ADK Rebate Finder Badge */}
+                      {results.processing_method === 'adk_integrated' && (
+                        <div style={{
+                          fontSize: '0.75rem',
+                          color: '#059669',
+                          marginBottom: '1rem',
+                          textAlign: 'center'
+                        }}>
+                          🎯 Found by Real RebateHunterAgent via ADK
+                        </div>
+                      )}
+                      
+                      <button style={{
+                        ...styles.button, 
+                        background: 'linear-gradient(135deg, #ea580c, #c2410c)'
+                      }}>
                         Apply for Rebates
                       </button>
                     </>
                   );
                 })()}
               </div>
-
-              {/* Market Insights */}
-              {results.market_research?.market_insights && (
-                <div style={styles.resultCard}>
-                  <div style={styles.cardHeader}>
-                    <div style={{...styles.cardIcon, background: '#ecfdf5'}}>📈</div>
-                    <h3 style={styles.cardTitle}>Market Position</h3>
-                  </div>
-                  
-                  {(() => {
-                    const insights = results.market_research.market_insights;
-                    
-                    return (
-                      <>
-                        <div style={{display: 'flex', justifyContent: 'space-between', marginBottom: '1rem'}}>
-                          <span>Your Rate Position</span>
-                          <strong style={{
-                            color: insights.current_rate_position === 'excellent' ? '#16a34a' : 
-                                  insights.current_rate_position === 'good' ? '#f59e0b' : 
-                                  insights.current_rate_position === 'poor' ? '#dc2626' : '#6b7280'
-                          }}>
-                            {(insights.current_rate_position || 'average').charAt(0).toUpperCase() + 
-                             (insights.current_rate_position || 'average').slice(1)}
-                          </strong>
-                        </div>
-                        
-                        {insights.live_market_average && (
-                          <div style={{display: 'flex', justifyContent: 'space-between', marginBottom: '1rem'}}>
-                            <span>Market Average Rate</span>
-                            <strong>${insights.live_market_average}/kWh</strong>
-                          </div>
-                        )}
-                        
-                        <div style={{display: 'flex', justifyContent: 'space-between', marginBottom: '1rem'}}>
-                          <span>Plans Analyzed</span>
-                          <strong>{insights.plans_analyzed || 0} plans</strong>
-                        </div>
-                        
-                        <div style={{display: 'flex', justifyContent: 'space-between', marginBottom: '1rem'}}>
-                          <span>Retailers Compared</span>
-                          <strong>{insights.retailer_count || 0} retailers</strong>
-                        </div>
-                        
-                        {insights.switching_recommendation && (
-                          <div style={{
-                            padding: '0.75rem',
-                            background: insights.switching_recommendation.includes('STRONG') ? '#f0fdf4' :
-                                       insights.switching_recommendation.includes('RECOMMENDED') ? '#fffbeb' : '#f8fafc',
-                            border: `1px solid ${insights.switching_recommendation.includes('STRONG') ? '#16a34a' :
-                                                  insights.switching_recommendation.includes('RECOMMENDED') ? '#f59e0b' : '#6b7280'}`,
-                            borderRadius: '0.5rem',
-                            fontSize: '0.875rem',
-                            marginTop: '1rem'
-                          }}>
-                            {insights.switching_recommendation}
-                          </div>
-                        )}
-                      </>
-                    );
-                  })()}
-                </div>
-              )}
             </div>
           </>
         )}
+
+
+    {/* PART 10: Footer and Component Closing */}
 
         {/* CTA Button - Only show after analysis or if there's an error */}
         {(results || error) && (
@@ -1064,6 +1418,7 @@ const WattsMyBillApp = () => {
               onClick={resetAnalysis}
               style={{
                 ...styles.button,
+                ...(results?.processing_method === 'adk_integrated' ? styles.adkButton : {}),
                 fontSize: '1.125rem',
                 padding: '1.25rem 2.5rem',
                 width: 'auto',
@@ -1072,7 +1427,9 @@ const WattsMyBillApp = () => {
               }}
               onMouseEnter={(e) => {
                 e.target.style.transform = 'translateY(-2px)';
-                e.target.style.boxShadow = '0 8px 25px rgba(59, 130, 246, 0.3)';
+                e.target.style.boxShadow = results?.processing_method === 'adk_integrated' 
+                  ? '0 8px 25px rgba(16, 185, 129, 0.3)'
+                  : '0 8px 25px rgba(59, 130, 246, 0.3)';
               }}
               onMouseLeave={(e) => {
                 e.target.style.transform = 'translateY(0)';
@@ -1100,6 +1457,27 @@ const WattsMyBillApp = () => {
             View Source Code on GitHub
           </a>
         </p>
+        
+        {/* ADK Integration Footer */}
+        {adkStatus?.adk_integration?.workflow_ready && (
+          <div style={{
+            marginTop: '1rem',
+            padding: '1rem',
+            background: '#f0fdf4',
+            border: '1px solid #10b981',
+            borderRadius: '0.75rem',
+            fontSize: '0.875rem'
+          }}>
+            <div style={{fontWeight: '600', marginBottom: '0.5rem', color: '#059669'}}>
+              🤖 Google Cloud ADK Integration Active
+            </div>
+            <div style={{color: '#166534'}}>
+              Real Agent Orchestra: {adkStatus.adk_integration.agent_count} agents | 
+              Live Market Data: {adkStatus.adk_integration.api_integration ? 'Connected' : 'Fallback'} | 
+              ETL Warehouse: {adkStatus.adk_integration.etl_status ? 'Active' : 'Unavailable'}
+            </div>
+          </div>
+        )}
       </div>
       
       <style>{`
