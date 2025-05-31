@@ -68,7 +68,7 @@ class ETLEnergyService:
                 usage_rate, supply_charge, solar_fit_rate,
                 state_coverage, features, data_quality_score, extracted_at
                     FROM `{project_id}.{dataset_id}.v_best_plans_per_retailer`
-                    WHERE state_coverage = @state OR state_coverage = 'MULTI'
+                    WHERE state_coverage = @state
                     ORDER BY data_quality_score DESC, usage_rate ASC
                     LIMIT @limit
             """,
@@ -200,6 +200,7 @@ class ETLEnergyService:
                 'plan_id': row.plan_id,
                 'retailer': row.retailer,
                 'plan_name': self._generate_plan_name(row.plan_id, row.retailer),
+                'state_coverage': getattr(row, 'state_coverage', 'UNKNOWN'),  
                 'pricing_model': getattr(row, 'pricing_model', 'SINGLE_RATE'),
                 'is_fixed': getattr(row, 'is_fixed', False),
                 'usage_rate': float(row.usage_rate) if row.usage_rate else None,
@@ -229,7 +230,8 @@ class ETLEnergyService:
             0.10 <= plan.get('usage_rate', 0) <= 0.80 and
             0.50 <= plan.get('supply_charge', 0) <= 3.00 and
             plan.get('retailer') and
-            plan.get('plan_name')
+            plan.get('plan_name') and
+            plan.get('state_coverage') not in ['UNKNOWN', 'MULTI'] 
         )
 
     def _get_supplemental_plans(self, state: str, limit: int) -> List[Dict[str, Any]]:
