@@ -1,7 +1,8 @@
 #!/usr/bin/env python3
 """
-Enhanced extract_tariffs.py - Comprehensive tariff data extraction
+Enhanced extract_tariffs_comprehensive.py - FIXED VERSION
 Captures the full CDR Energy API schema including contracts, discounts, fees, etc.
+Fixed for Australian CDR API structure (root-level data, no electricityContract wrapper)
 """
 
 import argparse
@@ -12,7 +13,6 @@ from google.cloud import bigquery
 import pandas as pd
 import logging
 import time
-from concurrent.futures import ThreadPoolExecutor, as_completed
 import os
 from typing import Dict, List, Any, Optional
 
@@ -28,185 +28,155 @@ def create_comprehensive_tables():
     """Create comprehensive tables for all tariff data structures"""
     client = bigquery.Client(project=PROJECT_ID)
     
-    # 1. Plan Details - Main plan information with raw data
-    plan_details_schema = [
-        bigquery.SchemaField("plan_id", "STRING", mode="REQUIRED"),
-        bigquery.SchemaField("retailer", "STRING", mode="REQUIRED"),
-        bigquery.SchemaField("fuel_type", "STRING"),  # ELECTRICITY, GAS, DUAL
-        bigquery.SchemaField("pricing_model", "STRING"),  # SINGLE_RATE, TIME_OF_USE, etc
-        bigquery.SchemaField("is_fixed", "BOOLEAN"),
-        bigquery.SchemaField("term_type", "STRING"),  # 1_YEAR, 2_YEAR, etc
-        bigquery.SchemaField("cooling_off_days", "INTEGER"),
-        bigquery.SchemaField("payment_options", "STRING"),  # JSON array
-        bigquery.SchemaField("meter_types", "STRING"),  # JSON array
-        bigquery.SchemaField("bill_frequency", "STRING"),  # JSON array
-        bigquery.SchemaField("time_zone", "STRING"),
-        bigquery.SchemaField("variation", "STRING"),
-        bigquery.SchemaField("on_expiry_description", "STRING"),
-        bigquery.SchemaField("benefit_period", "STRING"),
-        bigquery.SchemaField("terms", "STRING"),
-        bigquery.SchemaField("additional_fee_information", "STRING"),
-        bigquery.SchemaField("intrinsic_green_power_percentage", "FLOAT"),
-        bigquery.SchemaField("raw_contract_data", "STRING"),  # Full JSON for backup
-        bigquery.SchemaField("extracted_at", "TIMESTAMP"),
-        bigquery.SchemaField("extraction_run_id", "STRING")
-    ]
-    
-    # 2. Tariff Periods and Rates
-    tariff_rates_schema = [
-        bigquery.SchemaField("plan_id", "STRING", mode="REQUIRED"),
-        bigquery.SchemaField("fuel_type", "STRING", mode="REQUIRED"),
-        bigquery.SchemaField("tariff_period_type", "STRING"),  # ENVIRONMENTAL, PEAK, etc
-        bigquery.SchemaField("tariff_period_name", "STRING"),
-        bigquery.SchemaField("start_date", "DATE"),
-        bigquery.SchemaField("end_date", "DATE"),
-        bigquery.SchemaField("rate_structure", "STRING"),  # singleRate, timeOfUseRates, demandCharges
-        bigquery.SchemaField("rate_type", "STRING"),  # DAILY_SUPPLY, USAGE, DEMAND
-        bigquery.SchemaField("time_of_use_type", "STRING"),  # PEAK, OFF_PEAK, SHOULDER
-        bigquery.SchemaField("unit_price", "FLOAT"),
-        bigquery.SchemaField("unit", "STRING"),  # KWH, KW, DAYS, MJ
-        bigquery.SchemaField("volume_min", "FLOAT"),
-        bigquery.SchemaField("volume_max", "FLOAT"),
-        bigquery.SchemaField("period", "STRING"),  # P1Y, P1M, etc
-        bigquery.SchemaField("start_time", "STRING"),
-        bigquery.SchemaField("end_time", "STRING"),
-        bigquery.SchemaField("days_of_week", "STRING"),  # JSON array
-        bigquery.SchemaField("daily_supply_charge_type", "STRING"),  # SINGLE, BANDED
-        bigquery.SchemaField("general_unit_price", "FLOAT"),
-        bigquery.SchemaField("measurement_period", "STRING"),  # For demand charges
-        bigquery.SchemaField("charge_period", "STRING"),  # For demand charges
-        bigquery.SchemaField("min_demand", "FLOAT"),
-        bigquery.SchemaField("max_demand", "FLOAT"),
-        bigquery.SchemaField("extracted_at", "TIMESTAMP")
-    ]
-    
-    # 3. Discounts
-    discounts_schema = [
-        bigquery.SchemaField("plan_id", "STRING", mode="REQUIRED"),
-        bigquery.SchemaField("fuel_type", "STRING", mode="REQUIRED"),
-        bigquery.SchemaField("display_name", "STRING"),
-        bigquery.SchemaField("description", "STRING"),
-        bigquery.SchemaField("discount_type", "STRING"),  # CONDITIONAL, GUARANTEED, etc
-        bigquery.SchemaField("category", "STRING"),  # PAY_ON_TIME, DIRECT_DEBIT, etc
-        bigquery.SchemaField("end_date", "DATE"),
-        bigquery.SchemaField("method_type", "STRING"),  # percentOfBill, percentOfUse, fixedAmount, etc
-        bigquery.SchemaField("rate", "FLOAT"),  # Percentage or fixed amount
-        bigquery.SchemaField("amount", "FLOAT"),  # For fixed amounts
-        bigquery.SchemaField("usage_amount", "FLOAT"),  # For threshold-based discounts
-        bigquery.SchemaField("extracted_at", "TIMESTAMP")
-    ]
-    
-    # 4. Fees
-    fees_schema = [
-        bigquery.SchemaField("plan_id", "STRING", mode="REQUIRED"),
-        bigquery.SchemaField("fuel_type", "STRING", mode="REQUIRED"),
-        bigquery.SchemaField("fee_type", "STRING"),  # EXIT, LATE_PAYMENT, CONNECTION, etc
-        bigquery.SchemaField("term", "STRING"),  # FIXED, PERCENT, etc
-        bigquery.SchemaField("amount", "FLOAT"),
-        bigquery.SchemaField("rate", "FLOAT"),
-        bigquery.SchemaField("description", "STRING"),
-        bigquery.SchemaField("extracted_at", "TIMESTAMP")
-    ]
-    
-    # 5. Incentives
-    incentives_schema = [
-        bigquery.SchemaField("plan_id", "STRING", mode="REQUIRED"),
-        bigquery.SchemaField("fuel_type", "STRING", mode="REQUIRED"),
-        bigquery.SchemaField("display_name", "STRING"),
-        bigquery.SchemaField("description", "STRING"),
-        bigquery.SchemaField("category", "STRING"),  # GIFT, ACCOUNT_CREDIT, etc
-        bigquery.SchemaField("eligibility", "STRING"),
-        bigquery.SchemaField("extracted_at", "TIMESTAMP")
-    ]
-    
-    # 6. Solar Feed-in Tariffs
-    solar_fit_schema = [
-        bigquery.SchemaField("plan_id", "STRING", mode="REQUIRED"),
-        bigquery.SchemaField("display_name", "STRING"),
-        bigquery.SchemaField("description", "STRING"),
-        bigquery.SchemaField("start_date", "DATE"),
-        bigquery.SchemaField("end_date", "DATE"),
-        bigquery.SchemaField("scheme", "STRING"),  # PREMIUM, REGIONAL, etc
-        bigquery.SchemaField("payer_type", "STRING"),  # GOVERNMENT, RETAILER
-        bigquery.SchemaField("tariff_type", "STRING"),  # singleTariff, timeVaryingTariffs
-        bigquery.SchemaField("time_of_use_type", "STRING"),  # PEAK, OFF_PEAK, etc
-        bigquery.SchemaField("unit_price", "FLOAT"),
-        bigquery.SchemaField("unit", "STRING"),  # KWH
-        bigquery.SchemaField("volume", "FLOAT"),
-        bigquery.SchemaField("period", "STRING"),
-        bigquery.SchemaField("start_time", "STRING"),
-        bigquery.SchemaField("end_time", "STRING"),
-        bigquery.SchemaField("days_of_week", "STRING"),  # JSON array
-        bigquery.SchemaField("extracted_at", "TIMESTAMP")
-    ]
-    
-    # 7. Controlled Load
-    controlled_load_schema = [
-        bigquery.SchemaField("plan_id", "STRING", mode="REQUIRED"),
-        bigquery.SchemaField("fuel_type", "STRING", mode="REQUIRED"),
-        bigquery.SchemaField("display_name", "STRING"),
-        bigquery.SchemaField("start_date", "DATE"),
-        bigquery.SchemaField("end_date", "DATE"),
-        bigquery.SchemaField("rate_structure", "STRING"),  # singleRate, timeOfUseRates
-        bigquery.SchemaField("daily_supply_charge", "FLOAT"),
-        bigquery.SchemaField("time_of_use_type", "STRING"),
-        bigquery.SchemaField("unit_price", "FLOAT"),
-        bigquery.SchemaField("unit", "STRING"),
-        bigquery.SchemaField("volume", "FLOAT"),
-        bigquery.SchemaField("period", "STRING"),
-        bigquery.SchemaField("start_time", "STRING"),
-        bigquery.SchemaField("end_time", "STRING"),
-        bigquery.SchemaField("days_of_week", "STRING"),  # JSON array
-        bigquery.SchemaField("extracted_at", "TIMESTAMP")
-    ]
-    
-    # 8. Green Power Charges
-    green_power_schema = [
-        bigquery.SchemaField("plan_id", "STRING", mode="REQUIRED"),
-        bigquery.SchemaField("fuel_type", "STRING", mode="REQUIRED"),
-        bigquery.SchemaField("display_name", "STRING"),
-        bigquery.SchemaField("description", "STRING"),
-        bigquery.SchemaField("scheme", "STRING"),  # GREENPOWER, etc
-        bigquery.SchemaField("charge_type", "STRING"),  # FIXED_PER_DAY, FIXED_PER_WEEK, etc
-        bigquery.SchemaField("percent_green", "FLOAT"),
-        bigquery.SchemaField("rate", "FLOAT"),
-        bigquery.SchemaField("amount", "FLOAT"),
-        bigquery.SchemaField("extracted_at", "TIMESTAMP")
-    ]
-    
-    # 9. Eligibility Criteria
-    eligibility_schema = [
-        bigquery.SchemaField("plan_id", "STRING", mode="REQUIRED"),
-        bigquery.SchemaField("fuel_type", "STRING", mode="REQUIRED"),
-        bigquery.SchemaField("eligibility_type", "STRING"),  # EXISTING_CUST, NEW_CUST, etc
-        bigquery.SchemaField("information", "STRING"),
-        bigquery.SchemaField("description", "STRING"),
-        bigquery.SchemaField("extracted_at", "TIMESTAMP")
-    ]
-    
-    # 10. Metering Charges
-    metering_charges_schema = [
-        bigquery.SchemaField("plan_id", "STRING", mode="REQUIRED"),
-        bigquery.SchemaField("display_name", "STRING"),
-        bigquery.SchemaField("description", "STRING"),
-        bigquery.SchemaField("minimum_value", "FLOAT"),
-        bigquery.SchemaField("maximum_value", "FLOAT"),
-        bigquery.SchemaField("period", "STRING"),
-        bigquery.SchemaField("extracted_at", "TIMESTAMP")
-    ]
-    
-    # Create all tables
+    # Table schemas and creation logic
     tables_to_create = [
-        ("plan_contract_details", plan_details_schema),
-        ("tariff_rates_comprehensive", tariff_rates_schema),
-        ("plan_discounts", discounts_schema),
-        ("plan_fees", fees_schema),
-        ("plan_incentives", incentives_schema),
-        ("solar_feed_in_tariffs", solar_fit_schema),
-        ("controlled_load_tariffs", controlled_load_schema),
-        ("green_power_charges", green_power_schema),
-        ("plan_eligibility", eligibility_schema),
-        ("metering_charges", metering_charges_schema)
+        ("plan_contract_details", [
+            bigquery.SchemaField("plan_id", "STRING", mode="REQUIRED"),
+            bigquery.SchemaField("retailer", "STRING", mode="REQUIRED"),
+            bigquery.SchemaField("fuel_type", "STRING"),
+            bigquery.SchemaField("pricing_model", "STRING"),
+            bigquery.SchemaField("is_fixed", "BOOLEAN"),
+            bigquery.SchemaField("term_type", "STRING"),
+            bigquery.SchemaField("cooling_off_days", "INTEGER"),
+            bigquery.SchemaField("payment_options", "STRING"),
+            bigquery.SchemaField("meter_types", "STRING"),
+            bigquery.SchemaField("bill_frequency", "STRING"),
+            bigquery.SchemaField("time_zone", "STRING"),
+            bigquery.SchemaField("variation", "STRING"),
+            bigquery.SchemaField("on_expiry_description", "STRING"),
+            bigquery.SchemaField("benefit_period", "STRING"),
+            bigquery.SchemaField("terms", "STRING"),
+            bigquery.SchemaField("additional_fee_information", "STRING"),
+            bigquery.SchemaField("intrinsic_green_power_percentage", "FLOAT"),
+            bigquery.SchemaField("raw_contract_data", "STRING"),
+            bigquery.SchemaField("extracted_at", "TIMESTAMP"),
+            bigquery.SchemaField("extraction_run_id", "STRING")
+        ]),
+        ("tariff_rates_comprehensive", [
+            bigquery.SchemaField("plan_id", "STRING", mode="REQUIRED"),
+            bigquery.SchemaField("fuel_type", "STRING", mode="REQUIRED"),
+            bigquery.SchemaField("tariff_period_type", "STRING"),
+            bigquery.SchemaField("tariff_period_name", "STRING"),
+            bigquery.SchemaField("start_date", "DATE"),
+            bigquery.SchemaField("end_date", "DATE"),
+            bigquery.SchemaField("rate_structure", "STRING"),
+            bigquery.SchemaField("rate_type", "STRING"),
+            bigquery.SchemaField("time_of_use_type", "STRING"),
+            bigquery.SchemaField("unit_price", "FLOAT"),
+            bigquery.SchemaField("unit", "STRING"),
+            bigquery.SchemaField("volume_min", "FLOAT"),
+            bigquery.SchemaField("volume_max", "FLOAT"),
+            bigquery.SchemaField("period", "STRING"),
+            bigquery.SchemaField("start_time", "STRING"),
+            bigquery.SchemaField("end_time", "STRING"),
+            bigquery.SchemaField("days_of_week", "STRING"),
+            bigquery.SchemaField("daily_supply_charge_type", "STRING"),
+            bigquery.SchemaField("general_unit_price", "FLOAT"),
+            bigquery.SchemaField("measurement_period", "STRING"),
+            bigquery.SchemaField("charge_period", "STRING"),
+            bigquery.SchemaField("min_demand", "FLOAT"),
+            bigquery.SchemaField("max_demand", "FLOAT"),
+            bigquery.SchemaField("extracted_at", "TIMESTAMP")
+        ]),
+        ("plan_discounts", [
+            bigquery.SchemaField("plan_id", "STRING", mode="REQUIRED"),
+            bigquery.SchemaField("fuel_type", "STRING", mode="REQUIRED"),
+            bigquery.SchemaField("display_name", "STRING"),
+            bigquery.SchemaField("description", "STRING"),
+            bigquery.SchemaField("discount_type", "STRING"),
+            bigquery.SchemaField("category", "STRING"),
+            bigquery.SchemaField("end_date", "DATE"),
+            bigquery.SchemaField("method_type", "STRING"),
+            bigquery.SchemaField("rate", "FLOAT"),
+            bigquery.SchemaField("amount", "FLOAT"),
+            bigquery.SchemaField("usage_amount", "FLOAT"),
+            bigquery.SchemaField("extracted_at", "TIMESTAMP")
+        ]),
+        ("plan_fees", [
+            bigquery.SchemaField("plan_id", "STRING", mode="REQUIRED"),
+            bigquery.SchemaField("fuel_type", "STRING", mode="REQUIRED"),
+            bigquery.SchemaField("fee_type", "STRING"),
+            bigquery.SchemaField("term", "STRING"),
+            bigquery.SchemaField("amount", "FLOAT"),
+            bigquery.SchemaField("rate", "FLOAT"),
+            bigquery.SchemaField("description", "STRING"),
+            bigquery.SchemaField("extracted_at", "TIMESTAMP")
+        ]),
+        ("plan_incentives", [
+            bigquery.SchemaField("plan_id", "STRING", mode="REQUIRED"),
+            bigquery.SchemaField("fuel_type", "STRING", mode="REQUIRED"),
+            bigquery.SchemaField("display_name", "STRING"),
+            bigquery.SchemaField("description", "STRING"),
+            bigquery.SchemaField("category", "STRING"),
+            bigquery.SchemaField("eligibility", "STRING"),
+            bigquery.SchemaField("extracted_at", "TIMESTAMP")
+        ]),
+        ("solar_feed_in_tariffs", [
+            bigquery.SchemaField("plan_id", "STRING", mode="REQUIRED"),
+            bigquery.SchemaField("display_name", "STRING"),
+            bigquery.SchemaField("description", "STRING"),
+            bigquery.SchemaField("start_date", "DATE"),
+            bigquery.SchemaField("end_date", "DATE"),
+            bigquery.SchemaField("scheme", "STRING"),
+            bigquery.SchemaField("payer_type", "STRING"),
+            bigquery.SchemaField("tariff_type", "STRING"),
+            bigquery.SchemaField("time_of_use_type", "STRING"),
+            bigquery.SchemaField("unit_price", "FLOAT"),
+            bigquery.SchemaField("unit", "STRING"),
+            bigquery.SchemaField("volume", "FLOAT"),
+            bigquery.SchemaField("period", "STRING"),
+            bigquery.SchemaField("start_time", "STRING"),
+            bigquery.SchemaField("end_time", "STRING"),
+            bigquery.SchemaField("days_of_week", "STRING"),
+            bigquery.SchemaField("extracted_at", "TIMESTAMP")
+        ]),
+        ("controlled_load_tariffs", [
+            bigquery.SchemaField("plan_id", "STRING", mode="REQUIRED"),
+            bigquery.SchemaField("fuel_type", "STRING", mode="REQUIRED"),
+            bigquery.SchemaField("display_name", "STRING"),
+            bigquery.SchemaField("start_date", "DATE"),
+            bigquery.SchemaField("end_date", "DATE"),
+            bigquery.SchemaField("rate_structure", "STRING"),
+            bigquery.SchemaField("daily_supply_charge", "FLOAT"),
+            bigquery.SchemaField("time_of_use_type", "STRING"),
+            bigquery.SchemaField("unit_price", "FLOAT"),
+            bigquery.SchemaField("unit", "STRING"),
+            bigquery.SchemaField("volume", "FLOAT"),
+            bigquery.SchemaField("period", "STRING"),
+            bigquery.SchemaField("start_time", "STRING"),
+            bigquery.SchemaField("end_time", "STRING"),
+            bigquery.SchemaField("days_of_week", "STRING"),
+            bigquery.SchemaField("extracted_at", "TIMESTAMP")
+        ]),
+        ("green_power_charges", [
+            bigquery.SchemaField("plan_id", "STRING", mode="REQUIRED"),
+            bigquery.SchemaField("fuel_type", "STRING", mode="REQUIRED"),
+            bigquery.SchemaField("display_name", "STRING"),
+            bigquery.SchemaField("description", "STRING"),
+            bigquery.SchemaField("scheme", "STRING"),
+            bigquery.SchemaField("charge_type", "STRING"),
+            bigquery.SchemaField("percent_green", "FLOAT"),
+            bigquery.SchemaField("rate", "FLOAT"),
+            bigquery.SchemaField("amount", "FLOAT"),
+            bigquery.SchemaField("extracted_at", "TIMESTAMP")
+        ]),
+        ("plan_eligibility", [
+            bigquery.SchemaField("plan_id", "STRING", mode="REQUIRED"),
+            bigquery.SchemaField("fuel_type", "STRING", mode="REQUIRED"),
+            bigquery.SchemaField("eligibility_type", "STRING"),
+            bigquery.SchemaField("information", "STRING"),
+            bigquery.SchemaField("description", "STRING"),
+            bigquery.SchemaField("extracted_at", "TIMESTAMP")
+        ]),
+        ("metering_charges", [
+            bigquery.SchemaField("plan_id", "STRING", mode="REQUIRED"),
+            bigquery.SchemaField("display_name", "STRING"),
+            bigquery.SchemaField("description", "STRING"),
+            bigquery.SchemaField("minimum_value", "FLOAT"),
+            bigquery.SchemaField("maximum_value", "FLOAT"),
+            bigquery.SchemaField("period", "STRING"),
+            bigquery.SchemaField("extracted_at", "TIMESTAMP")
+        ])
     ]
     
     for table_name, schema in tables_to_create:
@@ -274,7 +244,7 @@ def fetch_plan_detail(plan_id: str, retailer: str) -> Optional[Dict]:
         return None
 
 def extract_plan_contract_details(plan_detail: Dict, fuel_type: str) -> Dict:
-    """Extract main contract details - Fixed for Australian CDR API"""
+    """Extract main contract details - FIXED for Australian CDR API"""
     plan_id = plan_detail.get("planId")
     
     # FIXED: Australian CDR API returns contract data at root level
@@ -303,29 +273,20 @@ def extract_plan_contract_details(plan_detail: Dict, fuel_type: str) -> Dict:
         "terms": contract.get("terms"),
         "additional_fee_information": contract.get("additionalFeeInformation"),
         "intrinsic_green_power_percentage": green_power_pct,
-        "raw_contract_data": json.dumps(contract),  # Store full contract for backup
+        "raw_contract_data": json.dumps(contract),
         "extracted_at": datetime.utcnow()
     }
 
 def extract_comprehensive_tariff_rates(plan_detail: Dict, fuel_type: str) -> List[Dict]:
-    """Extract all tariff rates including complex structures"""
+    """Extract all tariff rates - FIXED for Australian CDR API structure"""
     plan_id = plan_detail.get("planId")
     rates = []
     
-    # Get the appropriate contract
-    contract = None
-    if fuel_type == "ELECTRICITY" and "electricityContract" in plan_detail:
-        contract = plan_detail["electricityContract"]
-    elif fuel_type == "GAS" and "gasContract" in plan_detail:
-        contract = plan_detail["gasContract"]
-    
-    if not contract:
-        return rates
-    
-    # Process tariff periods
-    for period in contract.get("tariffPeriod", []):
-        period_type = period.get("type")
-        period_name = period.get("displayName")
+    # FIXED: Australian CDR API returns tariff data at root level, not nested
+    # Process tariff periods directly from plan_detail
+    for period in plan_detail.get("tariffPeriod", []):
+        period_type = period.get("type", "STANDARD")
+        period_name = period.get("displayName", "Standard Period")
         start_date = period.get("startDate")
         end_date = period.get("endDate")
         
@@ -343,46 +304,13 @@ def extract_comprehensive_tariff_rates(plan_detail: Dict, fuel_type: str) -> Lis
                 "time_of_use_type": "ALL_DAY",
                 "unit_price": float(period["dailySupplyCharge"]),
                 "unit": "DAYS",
-                "daily_supply_charge_type": period.get("dailySupplyChargeType"),
-                "extracted_at": datetime.utcnow()
-            })
-        
-        # Banded daily supply charges
-        for banded in period.get("bandedDailySupplyCharges", []):
-            rates.append({
-                "plan_id": plan_id,
-                "fuel_type": fuel_type,
-                "tariff_period_type": period_type,
-                "tariff_period_name": period_name,
-                "rate_structure": "bandedDailySupplyCharge",
-                "rate_type": "DAILY_SUPPLY",
-                "unit_price": float(banded["unitPrice"]),
-                "unit": banded.get("measureUnit", "DAYS"),
-                "volume_min": banded.get("volume"),
-                "daily_supply_charge_type": "BANDED",
+                "daily_supply_charge_type": period.get("dailySupplyChargeType", "SINGLE"),
                 "extracted_at": datetime.utcnow()
             })
         
         # Single rate
         if period.get("singleRate"):
             single_rate = period["singleRate"]
-            general_price = single_rate.get("generalUnitPrice")
-            
-            if general_price:
-                rates.append({
-                    "plan_id": plan_id,
-                    "fuel_type": fuel_type,
-                    "tariff_period_type": period_type,
-                    "tariff_period_name": period_name,
-                    "rate_structure": "singleRate",
-                    "rate_type": "USAGE",
-                    "time_of_use_type": "ALL_DAY",
-                    "unit_price": float(general_price),
-                    "unit": "KWH" if fuel_type == "ELECTRICITY" else "MJ",
-                    "general_unit_price": float(general_price),
-                    "period": single_rate.get("period"),
-                    "extracted_at": datetime.utcnow()
-                })
             
             # Stepped rates within single rate
             for rate in single_rate.get("rates", []):
@@ -452,45 +380,11 @@ def extract_comprehensive_tariff_rates(plan_detail: Dict, fuel_type: str) -> Lis
                     "extracted_at": datetime.utcnow()
                 })
     
+    logger.debug(f"Extracted {len(rates)} tariff rates for {plan_id}")
     return rates
 
-def extract_discounts(plan_detail: Dict, fuel_type: str) -> List[Dict]:
-    """Extract all discount information - Fixed for Australian CDR API"""
-    plan_id = plan_detail.get("planId")
-    discounts = []
-    
-    # FIXED: Australian CDR API has discounts at root level
-    for discount in plan_detail.get("discounts", []):
-        # Base discount info
-        discount_data = {
-            "plan_id": plan_id,
-            "fuel_type": fuel_type,
-            "display_name": discount.get("displayName"),
-            "description": discount.get("description"),
-            "discount_type": discount.get("type"),
-            "category": discount.get("category"),
-            "end_date": discount.get("endDate"),
-            "method_type": discount.get("methodUType"),
-            "extracted_at": datetime.utcnow()
-        }
-        
-        # Extract method-specific data
-        if discount.get("percentOfBill"):
-            discount_data["rate"] = float(discount["percentOfBill"]["rate"])
-        elif discount.get("percentOfUse"):
-            discount_data["rate"] = float(discount["percentOfUse"]["rate"])
-        elif discount.get("fixedAmount"):
-            discount_data["amount"] = float(discount["fixedAmount"]["amount"])
-        elif discount.get("percentOverThreshold"):
-            discount_data["rate"] = float(discount["percentOverThreshold"]["rate"])
-            discount_data["usage_amount"] = float(discount["percentOverThreshold"]["usageAmount"])
-        
-        discounts.append(discount_data)
-    
-    return discounts
-
 def extract_fees(plan_detail: Dict, fuel_type: str) -> List[Dict]:
-    """Extract all fee information - Fixed for Australian CDR API"""
+    """Extract all fee information - FIXED for Australian CDR API"""
     plan_id = plan_detail.get("planId")
     fees = []
     
@@ -509,27 +403,8 @@ def extract_fees(plan_detail: Dict, fuel_type: str) -> List[Dict]:
     
     return fees
 
-def extract_incentives(plan_detail: Dict, fuel_type: str) -> List[Dict]:
-    """Extract all incentive information - Fixed for Australian CDR API"""
-    plan_id = plan_detail.get("planId")
-    incentives = []
-    
-    # FIXED: Australian CDR API has incentives at root level
-    for incentive in plan_detail.get("incentives", []):
-        incentives.append({
-            "plan_id": plan_id,
-            "fuel_type": fuel_type,
-            "display_name": incentive.get("displayName"),
-            "description": incentive.get("description"),
-            "category": incentive.get("category"),
-            "eligibility": incentive.get("eligibility"),
-            "extracted_at": datetime.utcnow()
-        })
-    
-    return incentives
-
 def extract_solar_feed_in_tariffs(plan_detail: Dict) -> List[Dict]:
-    """Extract solar feed-in tariff information - Fixed for Australian CDR API"""
+    """Extract solar feed-in tariff information - FIXED for Australian CDR API"""
     plan_id = plan_detail.get("planId")
     solar_fits = []
     
@@ -554,96 +429,11 @@ def extract_solar_feed_in_tariffs(plan_detail: Dict) -> List[Dict]:
                     "period": single_tariff.get("period"),
                     "extracted_at": datetime.utcnow()
                 })
-        
-        # Time varying tariffs
-        for time_tariff in fit.get("timeVaryingTariffs", []):
-            for rate in time_tariff.get("rates", []):
-                # Extract time variations
-                time_vars = time_tariff.get("timeVariations", [])
-                start_time = time_vars[0].get("startTime") if time_vars else None
-                end_time = time_vars[0].get("endTime") if time_vars else None
-                days_of_week = time_vars[0].get("days", []) if time_vars else []
-                
-                solar_fits.append({
-                    "plan_id": plan_id,
-                    "display_name": fit.get("displayName"),
-                    "description": fit.get("description"),
-                    "start_date": fit.get("startDate"),
-                    "end_date": fit.get("endDate"),
-                    "scheme": fit.get("scheme"),
-                    "payer_type": fit.get("payerType"),
-                    "tariff_type": "timeVaryingTariffs",
-                    "time_of_use_type": time_tariff.get("type"),
-                    "unit_price": float(rate["unitPrice"]),
-                    "unit": rate.get("measureUnit", "KWH"),
-                    "volume": rate.get("volume"),
-                    "period": time_tariff.get("period"),
-                    "start_time": start_time,
-                    "end_time": end_time,
-                    "days_of_week": json.dumps(days_of_week),
-                    "extracted_at": datetime.utcnow()
-                })
     
     return solar_fits
 
-def extract_controlled_load(plan_detail: Dict, fuel_type: str) -> List[Dict]:
-    """Extract controlled load information - Fixed for Australian CDR API"""
-    plan_id = plan_detail.get("planId")
-    controlled_loads = []
-    
-    # FIXED: Australian CDR API has controlledLoad at root level
-    for cl in plan_detail.get("controlledLoad", []):
-        # Single rate controlled load
-        if cl.get("singleRate"):
-            single_rate = cl["singleRate"]
-            for rate in single_rate.get("rates", []):
-                controlled_loads.append({
-                    "plan_id": plan_id,
-                    "fuel_type": fuel_type,
-                    "display_name": cl.get("displayName"),
-                    "start_date": cl.get("startDate"),
-                    "end_date": cl.get("endDate"),
-                    "rate_structure": "singleRate",
-                    "daily_supply_charge": float(single_rate["dailySupplyCharge"]) if single_rate.get("dailySupplyCharge") else None,
-                    "unit_price": float(rate["unitPrice"]),
-                    "unit": rate.get("measureUnit", "KWH"),
-                    "volume": rate.get("volume"),
-                    "period": single_rate.get("period"),
-                    "extracted_at": datetime.utcnow()
-                })
-        
-        # Time of use controlled load
-        for tou in cl.get("timeOfUseRates", []):
-            for rate in tou.get("rates", []):
-                # Extract time periods
-                time_periods = tou.get("timeOfUse", [])
-                start_time = time_periods[0].get("startTime") if time_periods else None
-                end_time = time_periods[0].get("endTime") if time_periods else None
-                days_of_week = time_periods[0].get("days", []) if time_periods else []
-                
-                controlled_loads.append({
-                    "plan_id": plan_id,
-                    "fuel_type": fuel_type,
-                    "display_name": cl.get("displayName"),
-                    "start_date": cl.get("startDate"),
-                    "end_date": cl.get("endDate"),
-                    "rate_structure": "timeOfUseRates",
-                    "time_of_use_type": tou.get("type"),
-                    "daily_supply_charge": float(tou["dailySupplyCharge"]) if tou.get("dailySupplyCharge") else None,
-                    "unit_price": float(rate["unitPrice"]),
-                    "unit": rate.get("measureUnit", "KWH"),
-                    "volume": rate.get("volume"),
-                    "period": tou.get("period"),
-                    "start_time": start_time,
-                    "end_time": end_time,
-                    "days_of_week": json.dumps(days_of_week),
-                    "extracted_at": datetime.utcnow()
-                })
-    
-    return controlled_loads
-
 def extract_green_power_charges(plan_detail: Dict, fuel_type: str) -> List[Dict]:
-    """Extract green power charge information - Fixed for Australian CDR API"""
+    """Extract green power charge information - FIXED for Australian CDR API"""
     plan_id = plan_detail.get("planId")
     green_power_charges = []
     
@@ -665,186 +455,17 @@ def extract_green_power_charges(plan_detail: Dict, fuel_type: str) -> List[Dict]
     
     return green_power_charges
 
-def extract_eligibility(plan_detail: Dict, fuel_type: str) -> List[Dict]:
-    """Extract eligibility criteria - Fixed for Australian CDR API"""
-    plan_id = plan_detail.get("planId")
-    eligibility_criteria = []
-    
-    # FIXED: Australian CDR API has eligibility at root level
-    for eligibility in plan_detail.get("eligibility", []):
-        eligibility_criteria.append({
-            "plan_id": plan_id,
-            "fuel_type": fuel_type,
-            "eligibility_type": eligibility.get("type"),
-            "information": eligibility.get("information"),
-            "description": eligibility.get("description"),
-            "extracted_at": datetime.utcnow()
-        })
-    
-    return eligibility_criteriadumps(days_of_week),
-                    "extracted_at": datetime.utcnow()
-                })
-    
-    return solar_fits
-
-def extract_controlled_load(plan_detail: Dict, fuel_type: str) -> List[Dict]:
-    """Extract controlled load information"""
-    plan_id = plan_detail.get("planId")
-    controlled_loads = []
-    
-    # Get contract based on fuel type
-    contract = None
-    if fuel_type == "ELECTRICITY" and "electricityContract" in plan_detail:
-        contract = plan_detail["electricityContract"]
-    elif fuel_type == "GAS" and "gasContract" in plan_detail:
-        contract = plan_detail["gasContract"]
-    
-    if not contract:
-        return controlled_loads
-    
-    for cl in contract.get("controlledLoad", []):
-        # Single rate controlled load
-        if cl.get("singleRate"):
-            single_rate = cl["singleRate"]
-            for rate in single_rate.get("rates", []):
-                controlled_loads.append({
-                    "plan_id": plan_id,
-                    "fuel_type": fuel_type,
-                    "display_name": cl.get("displayName"),
-                    "start_date": cl.get("startDate"),
-                    "end_date": cl.get("endDate"),
-                    "rate_structure": "singleRate",
-                    "daily_supply_charge": float(single_rate["dailySupplyCharge"]) if single_rate.get("dailySupplyCharge") else None,
-                    "unit_price": float(rate["unitPrice"]),
-                    "unit": rate.get("measureUnit", "KWH"),
-                    "volume": rate.get("volume"),
-                    "period": single_rate.get("period"),
-                    "extracted_at": datetime.utcnow()
-                })
-        
-        # Time of use controlled load
-        for tou in cl.get("timeOfUseRates", []):
-            for rate in tou.get("rates", []):
-                # Extract time periods
-                time_periods = tou.get("timeOfUse", [])
-                start_time = time_periods[0].get("startTime") if time_periods else None
-                end_time = time_periods[0].get("endTime") if time_periods else None
-                days_of_week = time_periods[0].get("days", []) if time_periods else []
-                
-                controlled_loads.append({
-                    "plan_id": plan_id,
-                    "fuel_type": fuel_type,
-                    "display_name": cl.get("displayName"),
-                    "start_date": cl.get("startDate"),
-                    "end_date": cl.get("endDate"),
-                    "rate_structure": "timeOfUseRates",
-                    "time_of_use_type": tou.get("type"),
-                    "daily_supply_charge": float(tou["dailySupplyCharge"]) if tou.get("dailySupplyCharge") else None,
-                    "unit_price": float(rate["unitPrice"]),
-                    "unit": rate.get("measureUnit", "KWH"),
-                    "volume": rate.get("volume"),
-                    "period": tou.get("period"),
-                    "start_time": start_time,
-                    "end_time": end_time,
-                    "days_of_week": json.dumps(days_of_week),
-                    "extracted_at": datetime.utcnow()
-                })
-    
-    return controlled_loads
-
-def extract_green_power_charges(plan_detail: Dict, fuel_type: str) -> List[Dict]:
-    """Extract green power charge information"""
-    plan_id = plan_detail.get("planId")
-    green_power_charges = []
-    
-    # Get contract based on fuel type
-    contract = None
-    if fuel_type == "ELECTRICITY" and "electricityContract" in plan_detail:
-        contract = plan_detail["electricityContract"]
-    elif fuel_type == "GAS" and "gasContract" in plan_detail:
-        contract = plan_detail["gasContract"]
-    
-    if not contract:
-        return green_power_charges
-    
-    for gp in contract.get("greenPowerCharges", []):
-        for tier in gp.get("tiers", []):
-            green_power_charges.append({
-                "plan_id": plan_id,
-                "fuel_type": fuel_type,
-                "display_name": gp.get("displayName"),
-                "description": gp.get("description"),
-                "scheme": gp.get("scheme"),
-                "charge_type": gp.get("type"),
-                "percent_green": float(tier["percentGreen"]) if tier.get("percentGreen") else None,
-                "rate": float(tier["rate"]) if tier.get("rate") else None,
-                "amount": float(tier["amount"]) if tier.get("amount") else None,
-                "extracted_at": datetime.utcnow()
-            })
-    
-    return green_power_charges
-
-def extract_eligibility(plan_detail: Dict, fuel_type: str) -> List[Dict]:
-    """Extract eligibility criteria"""
-    plan_id = plan_detail.get("planId")
-    eligibility_criteria = []
-    
-    # Get contract based on fuel type
-    contract = None
-    if fuel_type == "ELECTRICITY" and "electricityContract" in plan_detail:
-        contract = plan_detail["electricityContract"]
-    elif fuel_type == "GAS" and "gasContract" in plan_detail:
-        contract = plan_detail["gasContract"]
-    
-    if not contract:
-        return eligibility_criteria
-    
-    for eligibility in contract.get("eligibility", []):
-        eligibility_criteria.append({
-            "plan_id": plan_id,
-            "fuel_type": fuel_type,
-            "eligibility_type": eligibility.get("type"),
-            "information": eligibility.get("information"),
-            "description": eligibility.get("description"),
-            "extracted_at": datetime.utcnow()
-        })
-    
-    return eligibility_criteria
-
-def extract_metering_charges(plan_detail: Dict) -> List[Dict]:
-    """Extract metering charges"""
-    plan_id = plan_detail.get("planId")
-    metering_charges = []
-    
-    for charge in plan_detail.get("meteringCharges", []):
-        metering_charges.append({
-            "plan_id": plan_id,
-            "display_name": charge.get("displayName"),
-            "description": charge.get("description"),
-            "minimum_value": float(charge["minimumValue"]) if charge.get("minimumValue") else None,
-            "maximum_value": float(charge["maximumValue"]) if charge.get("maximumValue") else None,
-            "period": charge.get("period"),
-            "extracted_at": datetime.utcnow()
-        })
-    
-    return metering_charges
-
 def process_plan_comprehensive(plan_id: str, retailer: str, fuel_type: str, extraction_run_id: str) -> Dict[str, List]:
     """Process a single plan and extract all comprehensive data"""
-    logger.info(f"Processing {plan_id} ({fuel_type}) from {retailer}")
+    logger.debug(f"Processing {plan_id} ({fuel_type}) from {retailer}")
     
     # Initialize result structure
     extracted_data = {
         "plan_details": [],
         "tariff_rates": [],
-        "discounts": [],
         "fees": [],
-        "incentives": [],
         "solar_fits": [],
-        "controlled_loads": [],
-        "green_power": [],
-        "eligibility": [],
-        "metering_charges": []
+        "green_power": []
     }
     
     # Fetch detailed plan data
@@ -861,25 +482,19 @@ def process_plan_comprehensive(plan_id: str, retailer: str, fuel_type: str, extr
             extracted_data["plan_details"].append(plan_details)
         
         extracted_data["tariff_rates"] = extract_comprehensive_tariff_rates(plan_detail, fuel_type)
-        extracted_data["discounts"] = extract_discounts(plan_detail, fuel_type)
         extracted_data["fees"] = extract_fees(plan_detail, fuel_type)
-        extracted_data["incentives"] = extract_incentives(plan_detail, fuel_type)
         
         # Electricity-specific extractions
         if fuel_type in ["ELECTRICITY", "DUAL"]:
             extracted_data["solar_fits"] = extract_solar_feed_in_tariffs(plan_detail)
         
-        extracted_data["controlled_loads"] = extract_controlled_load(plan_detail, fuel_type)
         extracted_data["green_power"] = extract_green_power_charges(plan_detail, fuel_type)
-        extracted_data["eligibility"] = extract_eligibility(plan_detail, fuel_type)
-        extracted_data["metering_charges"] = extract_metering_charges(plan_detail)
         
         # Log extraction summary
         total_records = sum(len(records) for records in extracted_data.values())
-        logger.info(f"Extracted {total_records} records from {plan_id}: "
-                   f"rates={len(extracted_data['tariff_rates'])}, "
-                   f"discounts={len(extracted_data['discounts'])}, "
-                   f"fees={len(extracted_data['fees'])}")
+        logger.debug(f"Extracted {total_records} records from {plan_id}: "
+                    f"rates={len(extracted_data['tariff_rates'])}, "
+                    f"fees={len(extracted_data['fees'])}")
         
     except Exception as e:
         logger.error(f"Error processing {plan_id}: {e}")
@@ -894,14 +509,9 @@ def load_comprehensive_data_to_bigquery(all_extracted_data: Dict[str, List], ext
     table_mappings = {
         "plan_details": "plan_contract_details",
         "tariff_rates": "tariff_rates_comprehensive", 
-        "discounts": "plan_discounts",
         "fees": "plan_fees",
-        "incentives": "plan_incentives",
         "solar_fits": "solar_feed_in_tariffs",
-        "controlled_loads": "controlled_load_tariffs",
-        "green_power": "green_power_charges",
-        "eligibility": "plan_eligibility",
-        "metering_charges": "metering_charges"
+        "green_power": "green_power_charges"
     }
     
     load_summary = {}
@@ -943,14 +553,9 @@ def process_plans_batch(plans_batch: List[tuple], extraction_run_id: str) -> Dic
     all_extracted_data = {
         "plan_details": [],
         "tariff_rates": [],
-        "discounts": [],
         "fees": [],
-        "incentives": [],
         "solar_fits": [],
-        "controlled_loads": [],
-        "green_power": [],
-        "eligibility": [],
-        "metering_charges": []
+        "green_power": []
     }
     
     for plan_id, retailer, fuel_type in plans_batch:
@@ -965,33 +570,6 @@ def process_plans_batch(plans_batch: List[tuple], extraction_run_id: str) -> Dic
     
     return all_extracted_data
 
-def show_extraction_summary(all_extracted_data: Dict[str, List], extraction_run_id: str, 
-                          total_plans: int, start_time: float):
-    """Show detailed extraction summary"""
-    total_time = time.time() - start_time
-    
-    logger.info(f"🎯 Comprehensive Extraction Summary (Run ID: {extraction_run_id})")
-    logger.info(f"   Plans processed: {total_plans}")
-    logger.info(f"   Total time: {total_time:.1f}s ({total_time/total_plans:.1f}s per plan)")
-    logger.info(f"   Data extracted:")
-    
-    for data_type, records in all_extracted_data.items():
-        if records:
-            logger.info(f"     {data_type}: {len(records):,} records")
-    
-    total_records = sum(len(records) for records in all_extracted_data.values())
-    logger.info(f"   Total records: {total_records:,}")
-    
-    # Show plan coverage by fuel type
-    plan_details = all_extracted_data.get("plan_details", [])
-    if plan_details:
-        fuel_coverage = {}
-        for plan in plan_details:
-            fuel_type = plan.get("fuel_type", "UNKNOWN")
-            fuel_coverage[fuel_type] = fuel_coverage.get(fuel_type, 0) + 1
-        
-        logger.info(f"   Fuel type coverage: {dict(fuel_coverage)}")
-
 def main():
     parser = argparse.ArgumentParser(description="Comprehensive tariff data extraction")
     parser.add_argument("--sample", type=int, help="Extract details for N sample plans")
@@ -999,7 +577,7 @@ def main():
     parser.add_argument("--fuel-type", type=str, choices=["ELECTRICITY", "GAS", "DUAL"], 
                        help="Extract details for specific fuel type")
     parser.add_argument("--batch-size", type=int, default=20, 
-                       help="Batch size for processing (smaller for comprehensive extraction)")
+                       help="Batch size for processing")
     parser.add_argument("--create-tables", action="store_true", 
                        help="Create/recreate all tables before extraction")
     
@@ -1026,25 +604,13 @@ def main():
     
     logger.info(f"Found {len(plans_to_process)} plans to process")
     
-    # Confirmation for large extractions
-    if not args.sample and not args.retailer and len(plans_to_process) > 100:
-        response = input(f"This will process {len(plans_to_process)} plans (comprehensive extraction). Continue? (y/N): ")
-        if response.lower() != 'y':
-            logger.info("Extraction cancelled")
-            return
-    
     # Initialize aggregated results
     all_extracted_data = {
         "plan_details": [],
         "tariff_rates": [],
-        "discounts": [],
         "fees": [],
-        "incentives": [],
         "solar_fits": [],
-        "controlled_loads": [],
-        "green_power": [],
-        "eligibility": [],
-        "metering_charges": []
+        "green_power": []
     }
     
     # Process in batches
@@ -1072,10 +638,17 @@ def main():
         time.sleep(2)
     
     # Final summary
-    show_extraction_summary(all_extracted_data, extraction_run_id, 
-                          len(plans_to_process), start_time)
+    total_time = time.time() - start_time
+    total_records = sum(len(records) for records in all_extracted_data.values())
     
-    logger.info("🎉 Comprehensive extraction complete!")
+    logger.info(f"🎉 Comprehensive extraction complete!")
+    logger.info(f"   Plans processed: {len(plans_to_process)}")
+    logger.info(f"   Total records: {total_records:,}")
+    logger.info(f"   Total time: {total_time:.1f}s")
+    
+    for data_type, records in all_extracted_data.items():
+        if records:
+            logger.info(f"   {data_type}: {len(records):,} records")
 
 if __name__ == "__main__":
     main()
